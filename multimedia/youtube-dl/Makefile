@@ -29,6 +29,7 @@ define Package/youtube-dl
   URL:=https://yt-dl.org
   DEPENDS:= \
     +ca-certificates \
+    +ffmpeg \
     +python3 \
     +python3-email \
     +python3-xml \
