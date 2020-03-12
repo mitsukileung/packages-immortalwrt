@@ -18,14 +18,14 @@ PKG_SOURCE_VERSION:=fb93473d895f058b2d8975d3cfa280ae2a8ae98d
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION)-$(PKG_SOURCE_VERSION).tar.gz
 PKG_MIRROR_HASH:=fc7f3eef8341163e21aecf6abf2492fa90362877093baef9987af3c703baa6ea
 
-
 PKG_MAINTAINER:=Xiongfei Guo <xfguo@credosemi.com>
 PKG_LICENSE:=GPL-2.0
 PKG_LICENSE_FILES:=LICENSE
 
+PKG_BUILD_DEPENDS:=scons/host
 
 include $(INCLUDE_DIR)/package.mk
-include $(INCLUDE_DIR)/scons.mk
+include ../../devel/scons/scons.mk
 
 define Package/smartsnmpd
   SECTION:=net

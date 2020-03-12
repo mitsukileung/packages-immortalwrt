@@ -20,8 +20,10 @@ PKG_LICENSE:=BSD-3-Clause
 PKG_LICENSE_FILES:=COPYING
 PKG_CPE_ID:=cpe:/a:berlios:gps_daemon
 
+PKG_BUILD_DEPENDS:=scons/host
+
 include $(INCLUDE_DIR)/package.mk
-include $(INCLUDE_DIR)/scons.mk
+include ../../devel/scons/scons.mk
 
 define Package/gpsd/Default
   DEPENDS+= +libusb-1.0
