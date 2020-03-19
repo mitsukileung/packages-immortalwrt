@@ -1,12 +1,14 @@
 #
-# Copyright (C) 2018 Jeffery To
+# Copyright (C) 2018, 2020 Jeffery To
 #
 # This is free software, licensed under the GNU General Public License v2.
 # See /LICENSE for more information.
 #
 
 include $(TOPDIR)/rules.mk
-include ../golang-version.mk
+
+GO_VERSION_MAJOR_MINOR:=1.14
+GO_VERSION_PATCH:=1
 
 PKG_NAME:=golang
 PKG_VERSION:=$(GO_VERSION_MAJOR_MINOR)$(if $(GO_VERSION_PATCH),.$(GO_VERSION_PATCH))
@@ -14,11 +16,12 @@ PKG_RELEASE:=1
 
 GO_SOURCE_URLS:=https://dl.google.com/go/ \
                 https://mirrors.ustc.edu.cn/golang/ \
-                https://mirrors.nju.edu.cn/golang/
+                https://mirrors.nju.edu.cn/golang/ \
+                https://golang.org/dl/
 
 PKG_SOURCE:=go$(PKG_VERSION).src.tar.gz
 PKG_SOURCE_URL:=$(GO_SOURCE_URLS)
-PKG_HASH:=b13bf04633d4d8cf53226ebeaace8d4d2fd07ae6fa676d0844a688339debec34
+PKG_HASH:=2ad2572115b0d1b4cb4c138e6b3a31cee6294cb48af75ee86bec3dca04507676
 
 PKG_MAINTAINER:=Jeffery To <jeffery.to@gmail.com>
 PKG_LICENSE:=BSD-3-Clause
@@ -34,6 +37,10 @@ PKG_GO_WORK_DIR:=$(PKG_BUILD_DIR)/.go_work
 PKG_GO_HOST_CACHE_DIR:=$(PKG_GO_WORK_DIR)/host_cache
 PKG_GO_TARGET_CACHE_DIR:=$(PKG_GO_WORK_DIR)/target_cache
 
+PKG_GO_PREFIX:=/usr
+PKG_GO_VERSION_ID:=$(GO_VERSION_MAJOR_MINOR)
+PKG_GO_ROOT:=$(PKG_GO_PREFIX)/lib/go-$(PKG_GO_VERSION_ID)
+
 HOST_BUILD_DIR:=$(BUILD_DIR_HOST)/go-$(PKG_VERSION)
 HOST_BUILD_PARALLEL:=1
 
@@ -45,18 +52,27 @@ HOST_GO_VERSION_ID:=cross
 HOST_GO_ROOT:=$(HOST_GO_PREFIX)/lib/go-$(HOST_GO_VERSION_ID)
 
 HOST_GO_VALID_OS_ARCH:= \
-                                android_arm \
-  darwin_386   darwin_amd64     darwin_arm   darwin_arm64 \
-               dragonfly_amd64 \
-  freebsd_386  freebsd_amd64    freebsd_arm \
-  linux_386    linux_amd64      linux_arm    linux_arm64 \
-  netbsd_386   netbsd_amd64     netbsd_arm \
-  openbsd_386  openbsd_amd64    openbsd_arm \
-  plan9_386    plan9_amd64 \
-               solaris_amd64 \
+  android_386  android_amd64  android_arm  android_arm64 \
+  darwin_386   darwin_amd64   darwin_arm   darwin_arm64 \
+  freebsd_386  freebsd_amd64  freebsd_arm  freebsd_arm64 \
+  linux_386    linux_amd64    linux_arm    linux_arm64 \
+  \
+  openbsd_386  openbsd_amd64  openbsd_arm \
+  netbsd_386   netbsd_amd64   netbsd_arm \
+  plan9_386    plan9_amd64    plan9_arm \
+  \
   windows_386  windows_amd64 \
   \
-  linux_ppc64 linux_ppc64le linux_mips linux_mipsle linux_mips64 linux_mips64le
+  dragonfly_amd64 \
+  illumos_amd64 \
+  solaris_amd64 \
+  \
+  aix_ppc64 \
+  js_wasm \
+  \
+  linux_ppc64 linux_ppc64le \
+  linux_mips linux_mipsle linux_mips64 linux_mips64le \
+  linux_riscv64 linux_s390x
 
 BOOTSTRAP_SOURCE:=go1.4-bootstrap-20171003.tar.gz
 BOOTSTRAP_SOURCE_URL:=$(GO_SOURCE_URLS)
@@ -89,6 +105,20 @@ BOOTSTRAP_UNPACK:=$(HOST_TAR) -C $(BOOTSTRAP_BUILD_DIR) --strip-components=1 -xz
 # don't strip ELF executables in test data (and go itself)
 RSTRIP:=:
 STRIP:=:
+
+ifdef CONFIG_PKG_ASLR_PIE_ALL
+  ifeq ($(GO_TARGET_PIE_SUPPORTED),1)
+    PKG_GO_ENABLE_PIE:=1
+    PKG_GO_INSTALL_SUFFIX:=$(GO_TARGET_PIE_INSTALL_SUFFIX)
+  else
+    $(warning PIE buildmode is not supported for $(GO_OS)/$(GO_ARCH))
+  endif
+endif
+
+ifeq ($(GO_HOST_PIE_SUPPORTED),1)
+  HOST_GO_ENABLE_PIE:=1
+  HOST_GO_INSTALL_SUFFIX:=$(GO_HOST_PIE_INSTALL_SUFFIX)
+endif
 
 define Package/golang/Default
 $(call GoPackage/GoSubMenu)
@@ -156,8 +186,8 @@ endef
 $(eval $(call Download,golang-bootstrap))
 
 $(eval $(call GoCompiler/AddProfile,Bootstrap,$(BOOTSTRAP_BUILD_DIR),,bootstrap,$(GO_HOST_OS_ARCH)))
-$(eval $(call GoCompiler/AddProfile,Host,$(HOST_BUILD_DIR),$(HOST_GO_PREFIX),$(HOST_GO_VERSION_ID),$(GO_HOST_OS_ARCH)))
-$(eval $(call GoCompiler/AddProfile,Package,$(PKG_BUILD_DIR),$(GO_TARGET_PREFIX),$(GO_TARGET_VERSION_ID),$(GO_OS_ARCH)))
+$(eval $(call GoCompiler/AddProfile,Host,$(HOST_BUILD_DIR),$(HOST_GO_PREFIX),$(HOST_GO_VERSION_ID),$(GO_HOST_OS_ARCH),$(HOST_GO_INSTALL_SUFFIX)))
+$(eval $(call GoCompiler/AddProfile,Package,$(PKG_BUILD_DIR),$(PKG_GO_PREFIX),$(PKG_GO_VERSION_ID),$(GO_OS_ARCH),$(PKG_GO_INSTALL_SUFFIX)))
 
 define Host/Prepare
 	$(call Host/Prepare/Default)
@@ -165,6 +195,9 @@ define Host/Prepare
 	$(BOOTSTRAP_UNPACK)
 endef
 
+# when https://github.com/golang/go/issues/31544 is fixed,
+# we should be able to set GO_LDFLAGS=-buildmode=pie for host make
+# instead of doing a rebuild for pie
 define Host/Compile
 	$(call GoCompiler/Bootstrap/CheckHost,$(BOOTSTRAP_GO_VALID_OS_ARCH))
 	$(call GoCompiler/Host/CheckHost,$(HOST_GO_VALID_OS_ARCH))
@@ -185,6 +218,23 @@ define Host/Compile
 		CC=$(HOSTCC_NOCACHE) \
 		CXX=$(HOSTCXX_NOCACHE) \
 	)
+
+  ifneq ($(HOST_GO_ENABLE_PIE),)
+	@echo "Rebuilding host Go with PIE"
+
+	( \
+		cd $(HOST_BUILD_DIR)/bin ; \
+		$(CP) go go-nopie ; \
+		GOCACHE=$(HOST_GO_CACHE_DIR) \
+		GOENV=off \
+		CC=$(HOSTCC_NOCACHE) \
+		CXX=$(HOSTCXX_NOCACHE) \
+		./go-nopie install -a -buildmode=pie std cmd ; \
+		retval=$$$$? ; \
+		rm -f go-nopie ; \
+		exit $$$$retval ; \
+	)
+  endif
 endef
 
 # if host and target os/arch are the same,
@@ -198,7 +248,7 @@ define Host/Install
 
 	$(call GoCompiler/Host/Install/BinLinks,)
 
-	rm -rf $(HOST_GO_ROOT)/pkg/$(GO_HOST_OS_ARCH)
+	rm -rf $(HOST_GO_ROOT)/pkg/$(GO_HOST_OS_ARCH)$(if $(HOST_GO_INSTALL_SUFFIX),_$(HOST_GO_INSTALL_SUFFIX))
 
 	$(INSTALL_DIR) $(HOST_GO_ROOT)/openwrt
 	$(INSTALL_BIN) ./files/go-gcc-helper $(HOST_GO_ROOT)/openwrt/
@@ -237,8 +287,9 @@ define Build/Compile
 
 	( \
 		cd $(PKG_BUILD_DIR)/bin ; \
+		export $(call GoPackage/Environment/Target) ; \
 		$(CP) go go-host ; \
-		GOROOT_FINAL=$(GO_TARGET_ROOT) \
+		GOROOT_FINAL=$(PKG_GO_ROOT) \
 		GOCACHE=$(PKG_GO_TARGET_CACHE_DIR) \
 		GOENV=off \
 		GO_GCC_HELPER_CC="$(TARGET_CC)" \
@@ -248,8 +299,7 @@ define Build/Compile
 		CXX=g++ \
 		PKG_CONFIG=pkg-config \
 		PATH=$(HOST_GO_ROOT)/openwrt:$$$$PATH \
-		$(call GoPackage/Environment) \
-		./go-host install -a -v std cmd ; \
+		./go-host install -a $(if $(PKG_GO_ENABLE_PIE),-buildmode=pie) std cmd ; \
 		retval=$$$$? ; \
 		rm -f go-host ; \
 		exit $$$$retval ; \
@@ -257,16 +307,16 @@ define Build/Compile
 endef
 
 define Package/golang/install
-	$(call GoCompiler/Package/Install/Bin,$(1)$(GO_TARGET_PREFIX))
-	$(call GoCompiler/Package/Install/BinLinks,$(1)$(GO_TARGET_PREFIX))
+	$(call GoCompiler/Package/Install/Bin,$(1)$(PKG_GO_PREFIX))
+	$(call GoCompiler/Package/Install/BinLinks,$(1)$(PKG_GO_PREFIX))
 endef
 
 define Package/golang-doc/install
-	$(call GoCompiler/Package/Install/Doc,$(1)$(GO_TARGET_PREFIX))
+	$(call GoCompiler/Package/Install/Doc,$(1)$(PKG_GO_PREFIX))
 endef
 
 define Package/golang-src/install
-	$(call GoCompiler/Package/Install/Src,$(1)$(GO_TARGET_PREFIX))
+	$(call GoCompiler/Package/Install/Src,$(1)$(PKG_GO_PREFIX))
 endef
 
 # src/debug contains ELF executables as test data
