@@ -1,22 +1,21 @@
 include $(TOPDIR)/rules.mk
 
-PKG_NAME:=python-importlib-metadata
-PKG_VERSION:=1.5.0
+PKG_NAME:=python-importlib_metadata
+PKG_VERSION:=1.6.0
 PKG_RELEASE:=1
 
-PYPI_NAME:=importlib-metadata
-PYPI_SOURCE_NAME:=importlib_metadata
-PKG_HASH:=06f5b3a99029c7134207dd882428a66992a9de2bef7c2b699b5641f9886c3302
+PYPI_NAME:=importlib_metadata
+PKG_HASH:=acf9654ae85c6781257c349c7b370d6122b4ee5bffb630388f1a6ed51a6e6559
 
-PKG_MAINTAINER:=Paul Spooren <mail@aparcar.org>, Jan Pavlinec <jan.pavlinec@nic.cz>
+PKG_BUILD_DIR:=$(BUILD_DIR)/importlib_metadata-$(PKG_VERSION)
+
+PKG_MAINTAINER:=Paul Spooren <mail@aparcar.org>
 PKG_LICENSE:=Apache-2.0
 PKG_LICENSE_FILES:=LICENSE
 
-include ../pypi.mk
 include $(INCLUDE_DIR)/package.mk
+include ../pypi.mk
 include ../python3-package.mk
-
-HOST_PYTHON3_PACKAGE_BUILD_DEPENDS:=setuptools-scm
 
 define Package/python3-importlib-metadata
   SECTION:=lang
@@ -28,8 +27,12 @@ define Package/python3-importlib-metadata
   VARIANT:=python3
 endef
 
+PYTHON3_PKG_SETUP_VARS:= \
+        PKG_VERSION="$(PKG_VERSION)"
+
 define Package/python3-importlib-metadata/description
   importlib_metadata is a library to access the metadata for a Python package.
+  It is intended to be ported to Python 3.8.
 endef
 
 $(eval $(call Py3Package,python3-importlib-metadata))
