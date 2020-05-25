@@ -1,15 +1,15 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=docker-ce
-PKG_VERSION:=19.03.8
-PKG_RELEASE:=2
+PKG_VERSION:=19.03.9
+PKG_RELEASE:=1
 PKG_LICENSE:=Apache-2.0
 PKG_LICENSE_FILES:=components/cli/LICENSE components/engine/LICENSE
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.gz
 PKG_SOURCE_URL:=https://codeload.github.com/docker/docker-ce/tar.gz/v$(PKG_VERSION)?
-PKG_HASH:=781c69e00e98f64fb167ee61de764882bd4926a873d98ce6f370d3cd3435b501
-PKG_SOURCE_VERSION:=afacb8b7f0 # SHA1 used within the docker executables
+PKG_HASH:=f1b9e28e789516b4ba741cc4683c2c088e8c4893e2acbd7ac272a75ddeccc1a1
+PKG_SOURCE_VERSION:=9d988398e7 # SHA1 used within the docker executables
 
 PKG_MAINTAINER:=Gerard Ryan <G.M0N3Y.2503@gmail.com>
 
@@ -23,7 +23,7 @@ endef
 
 # values from respective '.installer' files at https://github.com/docker/docker-ce/blob/v$(PKG_VERSION)/components/engine/hack/dockerfile/install/
 $(eval $(call CheckExpectedSrcVer,../containerd/Makefile,7ad184331fa3e55e52b890ea95e65ba581ae3429))
-$(eval $(call CheckExpectedSrcVer,../libnetwork/Makefile,9fd385be8302dbe1071a3ce124891893ff27f90f))
+$(eval $(call CheckExpectedSrcVer,../libnetwork/Makefile,0941c3f409260d5f05cfa6fc68420d8ad45ee483))
 $(eval $(call CheckExpectedSrcVer,../runc/Makefile,dc9208a3303feef5b3839f4323d9beb36df0a9dd))
 $(eval $(call CheckExpectedSrcVer,../tini/Makefile,fec3683b971d9c3ef73f284f176672c44b448662))
 
@@ -45,8 +45,8 @@ define Package/docker-ce
   TITLE:=Docker Community Edition
   URL:=https://www.docker.com/
   DEPENDS:=$(GO_ARCH_DEPENDS) @HAS_FPU @(aarch64||arm||x86_64) +btrfs-progs +ca-certificates +cgroupfs-mount +containerd +libdevmapper +libnetwork +tini \
-           +DOCKER_SECCOMP:libseccomp +iptables-mod-extra +kmod-br-netfilter +kmod-ikconfig +kmod-nf-conntrack-netlink +kmod-nf-ipvs +kmod-veth \
-	   +@KERNEL_CGROUPS +@KERNEL_CGROUP_CPUACCT +@KERNEL_CGROUP_SCHED 
+	  +DOCKER_SECCOMP:libseccomp +iptables-mod-extra +kmod-br-netfilter +kmod-ikconfig +kmod-nf-conntrack-netlink +kmod-nf-ipvs +kmod-veth \
+	  +@KERNEL_CGROUPS +@KERNEL_CGROUP_CPUACCT +@KERNEL_CGROUP_SCHED
   USERID:=docker:docker
   MENU:=1
 endef
@@ -79,7 +79,7 @@ endif
 
 define Build/Compile
 	( \
-		export $(call GoPackage/Environment) \
+		export $(GO_PKG_VARS) \
 			GITCOMMIT=$(PKG_SOURCE_VERSION) \
 			DOCKER_GITCOMMIT=$(PKG_SOURCE_VERSION) \
 			DOCKER_BUILDTAGS='$(BUILDTAGS)' \
@@ -114,6 +114,11 @@ define Package/docker-ce/install
 
 	$(INSTALL_DIR) $(1)/etc/docker
 	$(INSTALL_CONF) ./files/daemon.json $(1)/etc/docker/
+
+	# Must be after systcl 11-br-netfilter.conf from kmod-br-netfilter
+	$(INSTALL_DIR) $(1)/etc/sysctl.d
+	$(INSTALL_DATA) ./files/etc/sysctl.d/sysctl-br-netfilter-ip.conf \
+		$(1)/etc/sysctl.d/12-br-netfilter-ip.conf
 endef
 
 $(eval $(call BuildPackage,docker-ce))
