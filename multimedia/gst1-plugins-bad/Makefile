@@ -8,12 +8,12 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=gst1-plugins-bad
-PKG_VERSION:=1.18.4
-PKG_RELEASE:=$(AUTORELEASE)
+PKG_VERSION:=1.22.3
+PKG_RELEASE:=1
 
 PKG_SOURCE:=gst-plugins-bad-$(PKG_VERSION).tar.xz
 PKG_SOURCE_URL:=http://gstreamer.freedesktop.org/src/gst-plugins-bad/
-PKG_HASH:=74e806bc5595b18c70e9ca93571e27e79dfb808e5d2e7967afa952b52e99c85f
+PKG_HASH:=e1798fee2d86127f0637481c607f983293bf0fd81aad70a5c7b47205af3621d8
 PKG_BUILD_DIR:=$(BUILD_DIR)/gst-plugins-bad-$(PKG_VERSION)
 
 PKG_MAINTAINER:=W. Michael Petullo <mike@flyn.org> \
@@ -21,11 +21,9 @@ PKG_MAINTAINER:=W. Michael Petullo <mike@flyn.org> \
 PKG_LICENSE:=LGPL-2.1-or-later GPL-2.0-or-later
 PKG_LICENSE_FILES:=COPYING.LIB COPYING
 
-PKG_INSTALL:=1
-
 include $(INCLUDE_DIR)/package.mk
 include $(INCLUDE_DIR)/nls.mk
-include ../../devel/meson/meson.mk
+include $(INCLUDE_DIR)/meson.mk
 
 GST_BAD_LIBS:=
 GST_BAD_MODULES:=
@@ -194,6 +192,7 @@ MESON_ARGS += \
 	-Dfluidsynth=disabled \
 	-Dgl=disabled \
 	-Dgme=disabled \
+	-Dgpl=enabled \
 	-Dgsm=disabled \
 	-Dipcpipeline=disabled \
 	-Diqa=disabled \
@@ -201,7 +200,6 @@ MESON_ARGS += \
 	-Dkms=disabled \
 	-Dladspa=disabled \
 	-Dlibde265=disabled \
-	-Dlibmms=disabled \
 	-Dlv2=disabled \
 	-Dmediafoundation=disabled \
 	-Dmicrodns=disabled \
@@ -212,7 +210,6 @@ MESON_ARGS += \
 	-Dmusepack=disabled \
 	-Dneon=disabled \
 	-Dnvcodec=disabled \
-	-Dofa=disabled \
 	-Dopenal=disabled \
 	-Dopenexr=disabled \
 	-Dopenh264=disabled \
@@ -377,7 +374,7 @@ $(eval $(call GstBuildPlugin,interlace,interlace support,,,))
 $(eval $(call GstBuildPlugin,ivfparse,ivfparse support,,,))
 $(eval $(call GstBuildPlugin,ivtc,ivtc support,,,))
 $(eval $(call GstBuildPlugin,jp2kdecimator,jp2kdecimator support,,,))
-$(eval $(call GstBuildPlugin,jpegformat,jpegformat support,tag,,))
+$(eval $(call GstBuildPlugin,jpegformat,jpegformat support,tag codecparsers,,))
 $(eval $(call GstBuildPlugin,legacyrawparse,rawparse support,audio video,,))
 $(eval $(call GstBuildPlugin,midi,midi support,audio,,))
 $(eval $(call GstBuildPlugin,mpegpsdemux,mpegpsdemux support,pbutils,,))

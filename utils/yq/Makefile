@@ -1,12 +1,12 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=yq
-PKG_VERSION:=4.9.8
-PKG_RELEASE:=$(AUTORELEASE)
+PKG_VERSION:=4.34.2
+PKG_RELEASE:=1
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.gz
 PKG_SOURCE_URL:=https://codeload.github.com/mikefarah/yq/tar.gz/v$(PKG_VERSION)?
-PKG_HASH:=a7b68382ea04da47c1ef0486140f093ee4578525a89f33c3ba457d424e316cc2
+PKG_HASH:=035b7e827eccc66907270ff7f0d35c7917d56ded4aff44f7b942fe4802b70d01
 
 PKG_MAINTAINER:=Tianling Shen <cnsztl@immortalwrt.org>
 PKG_LICENSE:=MIT
@@ -14,14 +14,10 @@ PKG_LICENSE_FILES:=LICENSE
 
 PKG_BUILD_DEPENDS:=golang/host
 PKG_BUILD_PARALLEL:=1
-PKG_USE_MIPS16:=0
+PKG_BUILD_FLAGS:=no-mips16
 
-PKG_CONFIG_DEPENDS:= \
-	CONFIG_YQ_COMPRESS_GOPROXY \
-	CONFIG_YQ_COMPRESS_UPX
-
-GO_PKG:=github.com/mikefarah/yq
-GO_PKG_LDFLAGS:=-s -w
+GO_PKG:=github.com/mikefarah/yq/v4
+GO_PKG_LDFLAGS_X:=$(GO_PKG)/cmd.Version=$(PKG_VERSION)
 
 include $(INCLUDE_DIR)/package.mk
 include ../../lang/golang/golang-package.mk
@@ -36,28 +32,6 @@ endef
 
 define Package/yq/description
   The aim of the project is to be the jq or sed of yaml files.
-endef
-
-define Package/yq/config
-config YQ_COMPRESS_GOPROXY
-	bool "Compiling with GOPROXY proxy"
-	default n
-
-config YQ_COMPRESS_UPX
-	bool "Compress executable files with UPX"
-	default y
-endef
-
-ifeq ($(CONFIG_YQ_COMPRESS_GOPROXY),y)
-export GO111MODULE=on
-export GOPROXY=https://goproxy.baidu.com
-endif
-
-define Build/Compile
-	$(call GoPackage/Build/Compile)
-ifeq ($(CONFIG_YQ_COMPRESS_UPX),y)
-	$(STAGING_DIR_HOST)/bin/upx --lzma --best $(GO_PKG_BUILD_BIN_DIR)/yq
-endif
 endef
 
 $(eval $(call GoBinPackage,yq))

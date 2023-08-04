@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2015-2018 OpenWrt.org
+# Copyright (C) 2015-2016, 2018-2023 Jeffery To
 #
 # This is free software, licensed under the GNU General Public License v2.
 # See /LICENSE for more information.
@@ -8,19 +8,17 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=python-cryptography
-PKG_VERSION:=3.4.7
-PKG_RELEASE:=1
+PKG_VERSION:=3.4.8
+PKG_RELEASE:=3
 
 PYPI_NAME:=cryptography
-PKG_HASH:=3d10de8116d25649631977cb37da6cbdd2d6fa0e0281d014a5b7d337255ca713
+PKG_HASH:=94cc5ed4ceaefcbe5bf38c8fba6a21fc1d365bb8fb826ea1688e3370b2e24a1c
 
 PKG_LICENSE:=Apache-2.0 BSD-3-Clause
 PKG_LICENSE_FILES:=LICENSE.APACHE LICENSE.BSD
-PKG_MAINTAINER:=Jeffery To <jeffery.to@gmail.com>, Alexandru Ardelean <ardeleanalex@gmail.com>
+PKG_MAINTAINER:=Jeffery To <jeffery.to@gmail.com>
 
-PKG_BUILD_DEPENDS:=libffi/host
-
-HOST_PYTHON3_PACKAGE_BUILD_DEPENDS:=cffi  # cffi>=1.12
+PKG_BUILD_DEPENDS:=libffi/host python-cffi/host  # cffi>=1.12
 
 include ../pypi.mk
 include $(INCLUDE_DIR)/package.mk

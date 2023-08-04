@@ -8,12 +8,12 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=tiff
-PKG_VERSION:=4.3.0
-PKG_RELEASE:=$(AUTORELEASE)
+PKG_VERSION:=4.5.0
+PKG_RELEASE:=1
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.gz
 PKG_SOURCE_URL:=https://download.osgeo.org/libtiff
-PKG_HASH:=0e46e5acb087ce7d1ac53cf4f56a09b221537fc86dfc5daaad1c2e89e1b37ac8
+PKG_HASH:=c7a1d9296649233979fa3eacffef3fa024d73d05d589cb622727b5b08c423464
 
 PKG_MAINTAINER:=Jiri Slachta <jiri@slachta.eu>
 PKG_LICENSE:=BSD-3-Clause
@@ -34,7 +34,7 @@ $(call Package/tiff/Default)
   CATEGORY:=Libraries
   TITLE+= library
   DEPENDS:=+zlib +libjpeg
-  ABI_VERSION:=5
+  ABI_VERSION:=6
 endef
 
 define Package/tiff-utils
@@ -64,9 +64,8 @@ CMAKE_OPTIONS += \
 	-Dzstd=OFF \
 	-Dwebp=OFF \
 	-Djpeg12=OFF \
-	-Dcxx=OFF
-
-TARGET_CFLAGS += $(TARGET_CPPFLAGS)
+	-Dcxx=OFF \
+	-Dlibdeflate=OFF
 
 define Build/InstallDev
 	$(call Build/InstallDev/cmake,$(1))

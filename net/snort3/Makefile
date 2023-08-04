@@ -6,12 +6,12 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=snort3
-PKG_VERSION:=3.1.4.0
-PKG_RELEASE:=$(AUTORELEASE)
+PKG_VERSION:=3.1.67.0
+PKG_RELEASE:=1
 
 PKG_SOURCE:=$(PKG_VERSION).tar.gz
 PKG_SOURCE_URL:=https://github.com/snort3/snort3/archive/refs/tags/
-PKG_HASH:=a68af8ea46a038dfb0ad489e8d11dee62a3e63cb4a639f6bb4fac4ded955fe11
+PKG_HASH:=fed8ea7cf00d69c10e5750a6507392730552594f4f4a0dd5d1bf259a691b9a54
 
 PKG_MAINTAINER:=W. Michael Petullo <mike@flyn.org>
 PKG_LICENSE:=GPL-2.0-only
@@ -25,7 +25,7 @@ define Package/snort3
   SUBMENU:=Firewall
   SECTION:=net
   CATEGORY:=Network
-  DEPENDS:=+libstdcpp +libdaq3 +libdnet +libopenssl +libpcap +libpcre +libpthread +libuuid +zlib +libhwloc +libtirpc +luajit
+  DEPENDS:=+libstdcpp +libdaq3 +libdnet +libopenssl +libpcap +libpcre +libpthread +libuuid +zlib +libhwloc +libtirpc +luajit +libatomic
   TITLE:=Lightweight Network Intrusion Detection System
   URL:=http://www.snort.org/
   MENU:=1
@@ -59,6 +59,7 @@ TARGET_LDFLAGS += -L$(STAGING_DIR)/usr/lib/daq3 -ltirpc
 
 define Package/snort3/conffiles
 /etc/config/snort
+/etc/snort/
 endef
 
 define Package/snort3/install
@@ -68,16 +69,20 @@ define Package/snort3/install
 		$(1)/usr/bin/
 
 	$(INSTALL_BIN) \
+		$(PKG_INSTALL_DIR)/usr/bin/snort2lua  \
+		$(1)/usr/bin/
+
+	$(INSTALL_BIN) \
 		$(PKG_INSTALL_DIR)/usr/bin/u2{boat,spewfoo} \
 		$(1)/usr/bin/
 
 	$(INSTALL_DIR) $(1)/usr/lib/snort
 	$(CP) \
-		$(PKG_INSTALL_DIR)/usr/lib/snort/daqs/daq_hext.so \
+		$(PKG_INSTALL_DIR)/usr/lib/snort/daq/daq_hext.so \
 		$(1)/usr/lib/snort/
 
 	$(CP) \
-		$(PKG_INSTALL_DIR)/usr/lib/snort/daqs/daq_file.so \
+		$(PKG_INSTALL_DIR)/usr/lib/snort/daq/daq_file.so \
 		$(1)/usr/lib/snort/
 
 	$(INSTALL_DIR) $(1)/usr/share/lua
@@ -85,7 +90,14 @@ define Package/snort3/install
 		$(PKG_INSTALL_DIR)/usr/include/snort/lua/snort_plugin.lua \
 		$(1)/usr/share/lua/
 
-	$(INSTALL_DIR) $(1)/etc/snort
+	$(INSTALL_DIR) $(1)/etc/snort/{rules,lists,builtin_rules,so_rules}
+
+	$(INSTALL_CONF) \
+		$(PKG_INSTALL_DIR)/usr/etc/snort/*.lua \
+		$(1)/etc/snort
+	$(INSTALL_CONF) \
+		$(PKG_INSTALL_DIR)/usr/etc/snort/file_magic.rules \
+		$(1)/etc/snort
 
 	$(INSTALL_DIR) $(1)/etc/init.d
 	$(INSTALL_BIN) \
@@ -96,6 +108,25 @@ define Package/snort3/install
 	$(INSTALL_CONF) \
 		./files/snort.config \
 		$(1)/etc/config/snort
+	$(INSTALL_CONF) \
+		./files/local.lua \
+		$(1)/etc/snort
+	$(INSTALL_CONF) \
+		./files/homenet.lua \
+		$(1)/etc/snort
+	sed \
+		-i -e "/^EXTERNAL_NET\\s\\+=/ a include 'homenet.lua'" \
+		-e "/^HOME_NET\\s\\+=/ i -- we set HOME_NET and EXTERNAL_NET here or via an included file" \
+		-e 's/^\(HOME_NET\s\+=\)/--\1/g' \
+		-e 's/^\(EXTERNAL_NET\s\+=\)/--\1/g' \
+		$(1)/etc/snort/snort.lua
+	sed \
+		-i -e "s/^\\(RULE_PATH\\s\\+=\\).*/\\1 'rules'/g" \
+		-e "s/^\\(BUILTIN_RULE_PATH\\s\\+=\\).*/\\1 'builtin_rules'/g" \
+		-e "s/^\\(PLUGIN_RULE_PATH\\s\\+=\\).*/\\1 'so_rules'/g" \
+		-e "s/^\\(WHITE_LIST_PATH\\s\\+=\\).*/\\1 'lists'/g" \
+		-e "s/^\\(BLACK_LIST_PATH\\s\\+=\\).*/\\1 'lists'/g" \
+		$(1)/etc/snort/snort_defaults.lua
 endef
 
 $(eval $(call BuildPackage,snort3))

@@ -5,28 +5,23 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=cloudreve
-PKG_VERSION:=3.3.1
-PKG_RELEASE:=$(AUTORELEASE)
+PKG_VERSION:=3.8.0
+PKG_RELEASE:=2
 
 PKG_SOURCE_PROTO:=git
 PKG_SOURCE_URL:=https://github.com/cloudreve/Cloudreve.git
 PKG_SOURCE_VERSION:=$(PKG_VERSION)
-PKG_MIRROR_HASH:=22f8e42596ca440c456e296faacaf9273d164c8cb707489c099c06d435017ab7
+PKG_MIRROR_HASH:=4c05afb2193ab83bf144d75963f4757c1445317e68b2690727375a8e01f7ba3d
 
-PKG_LICENSE:=GPL-3.0
+PKG_LICENSE:=GPL-3.0-only
 PKG_LICENSE_FILES:=LICENSE
 PKG_MAINTAINER:=Tianling Shen <cnsztl@immortalwrt.org>
 
-PKG_BUILD_DEPENDS:=golang/host node/host node-yarn/host statik/host
+PKG_BUILD_DEPENDS:=golang/host node/host node-yarn/host
 PKG_BUILD_PARALLEL:=1
-PKG_USE_MIPS16:=0
-
-PKG_CONFIG_DEPENDS:= \
-	CONFIG_CLOUDREVE_COMPRESS_GOPROXY \
-	CONFIG_CLOUDREVE_COMPRESS_UPX
+PKG_BUILD_FLAGS:=no-mips16
 
 GO_PKG:=github.com/cloudreve/Cloudreve/v3
-GO_PKG_LDFLAGS:=-s -w
 GO_PKG_LDFLAGS_X:= \
 	$(GO_PKG)/pkg/conf.BackendVersion=$(PKG_VERSION) \
 	$(GO_PKG)/pkg/conf.LastCommit=$(PKG_VERSION)
@@ -40,42 +35,29 @@ define Package/cloudreve
   SUBMENU:=Cloud Manager
   TITLE:=A project helps you build your own cloud in minutes
   URL:=https://cloudreve.org
-  DEPENDS:=$(GO_ARCH_DEPENDS) +ca-bundle
+  DEPENDS:=@(aarch64||arm||i386||i686||x86_64) +ca-bundle
 endef
 
-define Package/cloudreve/config
-config CLOUDREVE_COMPRESS_GOPROXY
-	bool "Compiling with GOPROXY proxy"
-	default n
-
-config CLOUDREVE_COMPRESS_UPX
-	bool "Compress executable files with UPX"
-	default y
+define Package/cloudreve/description
+  Self-deployed file management and sharing system, supports multiple
+  storage providers.
 endef
-
-ifeq ($(CONFIG_CLOUDREVE_COMPRESS_GOPROXY),y)
-	export GO111MODULE=on
-	export GOPROXY=https://goproxy.baidu.com
-endif
 
 define Build/Compile
 	( \
-		pushd $(PKG_BUILD_DIR) ; \
-		cd assets ; \
+		pushd $(PKG_BUILD_DIR)/assets ; \
 		yarn install ; \
 		yarn run build ; \
-		cd ../ ; \
-		statik -src=assets/build/  -include=*.html,*.js,*.json,*.css,*.png,*.svg,*.ico -f ; \
+		cd .. ; \
+		zip -r - assets/build > assets.zip ; \
 		popd ; \
 		$(call GoPackage/Build/Compile) ; \
 	)
-ifeq ($(CONFIG_CLOUDREVE_COMPRESS_UPX),y)
-	$(STAGING_DIR_HOST)/bin/upx --lzma --best $(GO_PKG_BUILD_BIN_DIR)/Cloudreve
-endif
 endef
 
 define Package/cloudreve/install
 	$(call GoPackage/Package/Install/Bin,$(PKG_INSTALL_DIR))
+
 	$(INSTALL_DIR) $(1)/usr/bin
 	$(INSTALL_BIN) $(PKG_INSTALL_DIR)/usr/bin/Cloudreve $(1)/usr/bin/cloudreve
 endef

@@ -1,25 +1,17 @@
-#
-# Copyright (C) 2021 ImmortalWrt
-# (https://immortalwrt.org)
-#
-# This is free software, licensed under the GNU General Public License v3.
-# See /LICENSE for more information.
-#
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=sub-web
-PKG_VERSION:=1.0.0
-PKG_RELEASE:=6
+PKG_RELEASE:=1
 
 PKG_SOURCE_PROTO:=git
 PKG_SOURCE_URL:=https://github.com/CareyWang/sub-web.git
-PKG_SOURCE_DATE:=2021-01-07
-PKG_SOURCE_VERSION:=26d278800cc42025f8ceecff64b26f47b9fc2d14
-PKG_MIRROR_HASH:=a83f49aeecfa086ad8da3503b1ff95f8505845588839ed569d22fb0ced417b9f
+PKG_SOURCE_DATE:=2022-11-10
+PKG_SOURCE_VERSION:=71e53414a89b5fd5ec0ef453e32202194993d0cf
+PKG_MIRROR_HASH:=2910c8a782c6a3b2886f91b1621a973a8d5923b9f6d979c9b3defaf0acca4e06
 
 PKG_LICENSE:=MIT
 PKG_LICENSE_FILES:=LICENSE
-PKG_MAINTAINER:=CN_SZTL <cnsztl@immortalwrt.org>
+PKG_MAINTAINER:=Tianling Shen <cnsztl@immortalwrt.org>
 
 PKG_BUILD_DEPENDS:=node/host node-yarn/host
 
@@ -41,15 +33,16 @@ endef
 
 define Build/Compile
 	( \
-		cd $(PKG_BUILD_DIR); \
+		pushd "$(PKG_BUILD_DIR)"; \
 		yarn install; \
-		yarn build; \
+		NODE_OPTIONS=--openssl-legacy-provider yarn build; \
+		popd ; \
 	)
 endef
 
 define Package/sub-web/install
-	$(INSTALL_DIR) $(1)/www
-	$(CP) $(PKG_BUILD_DIR)/dist $(1)/www/sub-web
+	$(INSTALL_DIR) $(1)/www/sub-web
+	$(CP) $(PKG_BUILD_DIR)/dist/* $(1)/www/sub-web/
 endef
 
 $(eval $(call BuildPackage,sub-web))

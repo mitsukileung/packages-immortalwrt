@@ -54,7 +54,6 @@ iroute_ipv6
 keepalive
 key
 key_direction
-keysize
 learn_address
 link_mtu
 lladdr
@@ -177,6 +176,7 @@ persist_remote_ip
 persist_tun
 ping_timer_rem
 pull
+push_peer_info
 push_reset
 remote_random
 rmtun

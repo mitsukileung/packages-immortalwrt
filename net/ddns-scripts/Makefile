@@ -8,7 +8,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=ddns-scripts
 PKG_VERSION:=2.8.2
-PKG_RELEASE:=10
+PKG_RELEASE:=38
 
 PKG_LICENSE:=GPL-2.0
 
@@ -50,6 +50,7 @@ endef
 define Package/ddns-scripts-services
   $(call Package/ddns-scripts/Default)
   TITLE:=Common ddns providers
+  PROVIDES:=ddns-scripts_service
 endef
 
 define Package/ddns-scripts-services/description
@@ -57,10 +58,21 @@ define Package/ddns-scripts-services/description
 endef
 
 
+define Package/ddns-scripts-luadns
+  $(call Package/ddns-scripts/Default)
+  TITLE:=Extension for LuaDNS API v1
+  DEPENDS:=ddns-scripts +curl
+endef
+
+define Package/ddns-scripts-luadns/description
+  Dynamic DNS Client scripts extension for LuaDNS API v1 (require curl)
+endef
+
 define Package/ddns-scripts-cloudflare
   $(call Package/ddns-scripts/Default)
   TITLE:=Extension for cloudflare.com API v4
   DEPENDS:=ddns-scripts +curl
+  PROVIDES:=ddns-scripts_cloudflare.com-v4
 endef
 
 define Package/ddns-scripts-cloudflare/description
@@ -68,10 +80,22 @@ define Package/ddns-scripts-cloudflare/description
 endef
 
 
+define Package/ddns-scripts-gcp
+  $(call Package/ddns-scripts/Default)
+  TITLE:=Extension for Google Cloud DNS API v1
+  DEPENDS:=ddns-scripts +curl +openssl-util
+endef
+
+define Package/ddns-scripts-gcp/description
+  Dynamic DNS Client scripts extension for Google Cloud DNS API v1 (requires curl)
+endef
+
+
 define Package/ddns-scripts-freedns
   $(call Package/ddns-scripts/Default)
   TITLE:=Extension for freedns.42.pl
   DEPENDS:=ddns-scripts +curl
+  PROVIDES:=ddns-scripts_freedns_42_pl
 endef
 
 define Package/ddns-scripts-freedns/description
@@ -83,6 +107,7 @@ define Package/ddns-scripts-godaddy
   $(call Package/ddns-scripts/Default)
   TITLE:=Extension for godaddy.com API v1
   DEPENDS:=ddns-scripts +curl
+  PROVIDES:=ddns-scripts_godaddy.com-v1
 endef
 
 define Package/ddns-scripts-godaddy/description
@@ -94,6 +119,7 @@ define Package/ddns-scripts-digitalocean
   $(call Package/ddns-scripts/Default)
   TITLE:=Extention for digitalocean.com API v2
   DEPENDS:=ddns-scripts +curl
+  PROVIDES:=ddns-scripts_digitalocean.com-v2
 endef
 
 define Package/ddns-scripts-digitalocean/description
@@ -108,14 +134,39 @@ define Package/ddns-scripts-digitalocean/description
 endef
 
 
+define Package/ddns-scripts-dnspod
+  $(call Package/ddns-scripts/Default)
+  TITLE:=Extension for dnspod.cn API
+  DEPENDS:=ddns-scripts +curl
+endef
+
+define Package/ddns-scripts-dnspod/description
+  Dynamic DNS Client scripts extension for dnspod.cn API (require curl)
+endef
+
+
 define Package/ddns-scripts-noip
   $(call Package/ddns-scripts/Default)
   TITLE:=Extension for no-ip.com
   DEPENDS:=ddns-scripts
+  PROVIDES:=ddns-scripts_no-ip_com
 endef
 
 define Package/ddns-scripts-noip/description
   Dynamic DNS Client scripts extension for "no-ip.com".
+endef
+
+define Package/ddns-scripts-ns1
+  $(call Package/ddns-scripts/Default)
+  TITLE:=NS1 API
+  DEPENDS:=ddns-scripts +curl
+endef
+
+define Package/ddns-scripts-ns1/description
+  Dynamic DNS Client scripts extension for "ns1.com".
+  It requires:
+  "option username" to be a valid zone for ns1.com
+  "option password" to be a valid API key for ns1.com
 endef
 
 
@@ -123,6 +174,7 @@ define Package/ddns-scripts-nsupdate
   $(call Package/ddns-scripts/Default)
   TITLE:=Extension for using bind nsupdate.
   DEPENDS:=ddns-scripts +bind-client
+  PROVIDES:=ddns-scripts_nsupdate
 endef
 
 define Package/ddns-scripts-nsupdate/description
@@ -140,6 +192,7 @@ define Package/ddns-scripts-route53
   $(call Package/ddns-scripts/Default)
   TITLE:=Extension for route53 API v1
   DEPENDS:=ddns-scripts +curl +openssl-util
+  PROVIDES:=ddns-scripts_route53-v1
 endef
 
 define Package/ddns-scripts-route53/description
@@ -156,6 +209,7 @@ define Package/ddns-scripts-cnkuai
   $(call Package/ddns-scripts/Default)
   TITLE:=CnKuai API
   DEPENDS:=ddns-scripts +curl +giflib-utils
+  PROVIDES:=ddns-scripts_cnkuai_cn
 endef
 
 define Package/ddns-scripts-cnkuai/description
@@ -177,7 +231,54 @@ define Package/ddns-scripts-gandi/description
   Dynamic DNS Client scripts extension for "gandi.net".
   It requires:
   "option username" to be a valid subdomain for gandi.net
-  "option password" to be a valid API key for ganid.net
+  "option password" to be a valid API key for gandi.net
+endef
+
+
+define Package/ddns-scripts-pdns
+  $(call Package/ddns-scripts/Default)
+  TITLE:=PowerDNS API
+  DEPENDS:=ddns-scripts +curl
+endef
+
+define Package/ddns-scripts-pdns/description
+  Dynamic DNS Client scripts extension for "PowerDNS" via API.
+  It requires:
+  "option param_opt(Optional Parameter)" to be a valid root URL for the PowerDNS webserver
+  "option username" to be a valid subdomain for the PowerDNS domain
+  "option password" to be a valid API key for the PowerDNS webserver
+endef
+
+
+define Package/ddns-scripts-transip
+  $(call Package/ddns-scripts/Default)
+  TITLE:=Extension for TransIP API
+  DEPENDS:=ddns-scripts +curl +openssl-util +!BUSYBOX_CONFIG_MKTEMP:coreutils-mktemp
+endef
+
+define Package/ddns-scripts-transip/description
+  Dynamic DNS Client scripts extension for "transip.nl".
+  Note: You must also install ca-certificate or ca-bundle.
+  It requires:
+  "option username" to be a valid username for transip.nl
+  "option password" to be a valid matching private key
+  "option domain" to contain the base domain
+  "option param_enc" to contain the name of the DNS record to update
+  "option param_opt" to contain the TTL of the DNS record to update
+endef
+
+define Package/ddns-scripts-one
+	$(call Package/ddns-scripts/Default)
+	TITLE:=Extension for one.com Control Panel
+	DEPENDS:=ddns-scripts +curl
+endef
+
+define Package/ddns-scrtips-one/description
+	Dynamic DNS Client scripts extension for "one.com".
+	It requires:
+	"option username" to be a valid Email for one.com Control Panel
+	"option password" to be the matching one.com Control Panel password
+	"option domain" to contain the domain / subdomain
 endef
 
 
@@ -222,6 +323,8 @@ define Package/ddns-scripts/postinst
 if [ -z "$${IPKG_INSTROOT}" ]; then
 	/etc/init.d/ddns enabled
 	/etc/init.d/ddns start
+
+	grep -q "/etc/init.d/ddns" "/etc/rc.local" || sed -i "2 a /etc/init.d/ddns restart" "/etc/rc.local"
 fi
 exit 0
 endef
@@ -231,6 +334,8 @@ define Package/ddns-scripts/prerm
 if [ -n "$${IPKG_INSTROOT}" ]; then
 	/etc/init.d/ddns stop
 	/etc/init.d/ddns disable
+
+	sed -i "/ddns restart/d" "/etc/rc.local"
 fi
 exit 0
 endef
@@ -242,15 +347,41 @@ define Package/ddns-scripts-services/install
 		$(1)/usr/share/ddns/default
 
 	# Remove special services
+	rm $(1)/usr/share/ddns/default/luadns.com-v1.json
 	rm $(1)/usr/share/ddns/default/cloudflare.com-v4.json
+	rm $(1)/usr/share/ddns/default/cloud.google.com-v1.json
 	rm $(1)/usr/share/ddns/default/freedns.42.pl.json
 	rm $(1)/usr/share/ddns/default/godaddy.com-v1.json
 	rm $(1)/usr/share/ddns/default/digitalocean.com-v2.json
+	rm $(1)/usr/share/ddns/default/dnspod.cn.json
 	rm $(1)/usr/share/ddns/default/no-ip.com.json
 	rm $(1)/usr/share/ddns/default/bind-nsupdate.json
 	rm $(1)/usr/share/ddns/default/route53-v1.json
 	rm $(1)/usr/share/ddns/default/cnkuai.cn.json
 	rm $(1)/usr/share/ddns/default/gandi.net.json
+	rm $(1)/usr/share/ddns/default/pdns.json
+	rm $(1)/usr/share/ddns/default/transip.nl.json
+	rm $(1)/usr/share/ddns/default/ns1.com.json
+	rm $(1)/usr/share/ddns/default/one.com.json
+endef
+
+
+define Package/ddns-scripts-luadns/install
+	$(INSTALL_DIR) $(1)/usr/lib/ddns
+	$(INSTALL_BIN) ./files/usr/lib/ddns/update_luadns_v1.sh \
+		$(1)/usr/lib/ddns
+
+	$(INSTALL_DIR) $(1)/usr/share/ddns/default
+	$(INSTALL_DATA) ./files/usr/share/ddns/default/luadns.com-v1.json \
+		$(1)/usr/share/ddns/default/
+endef
+
+define Package/ddns-scripts-luadns/prerm
+#!/bin/sh
+if [ -z "$${IPKG_INSTROOT}" ]; then
+	/etc/init.d/ddns stop
+fi
+exit 0
 endef
 
 
@@ -265,6 +396,25 @@ define Package/ddns-scripts-cloudflare/install
 endef
 
 define Package/ddns-scripts-cloudflare/prerm
+#!/bin/sh
+if [ -z "$${IPKG_INSTROOT}" ]; then
+	/etc/init.d/ddns stop
+fi
+exit 0
+endef
+
+
+define Package/ddns-scripts-gcp/install
+	$(INSTALL_DIR) $(1)/usr/lib/ddns
+	$(INSTALL_BIN) ./files/usr/lib/ddns/update_gcp_v1.sh \
+		$(1)/usr/lib/ddns
+
+	$(INSTALL_DIR) $(1)/usr/share/ddns/default
+	$(INSTALL_DATA) ./files/usr/share/ddns/default/cloud.google.com-v1.json \
+		$(1)/usr/share/ddns/default/
+endef
+
+define Package/ddns-scripts-gcp/prerm
 #!/bin/sh
 if [ -z "$${IPKG_INSTROOT}" ]; then
 	/etc/init.d/ddns stop
@@ -330,6 +480,25 @@ exit 0
 endef
 
 
+define Package/ddns-scripts-dnspod/install
+	$(INSTALL_DIR) $(1)/usr/lib/ddns
+	$(INSTALL_BIN) ./files/usr/lib/ddns/update_dnspod_cn.sh \
+		$(1)/usr/lib/ddns
+
+	$(INSTALL_DIR) $(1)/usr/share/ddns/default
+	$(INSTALL_DATA) ./files/usr/share/ddns/default/dnspod.cn.json \
+		$(1)/usr/share/ddns/default/
+endef
+
+define Package/ddns-scripts-dnspod/prerm
+#!/bin/sh
+if [ -z "$${IPKG_INSTROOT}" ]; then
+	/etc/init.d/ddns stop
+fi
+exit 0
+endef
+
+
 define Package/ddns-scripts-noip/install
 	$(INSTALL_DIR) $(1)/usr/lib/ddns
 	$(INSTALL_BIN) ./files/usr/lib/ddns/update_no-ip_com.sh \
@@ -341,6 +510,25 @@ define Package/ddns-scripts-noip/install
 endef
 
 define Package/ddns-scripts-noip/prerm
+#!/bin/sh
+if [ -z "$${IPKG_INSTROOT}" ]; then
+	/etc/init.d/ddns stop
+fi
+exit 0
+endef
+
+
+define Package/ddns-scripts-ns1/install
+	$(INSTALL_DIR) $(1)/usr/lib/ddns
+	$(INSTALL_BIN) ./files/usr/lib/ddns/update_ns1_com.sh \
+		$(1)/usr/lib/ddns
+
+	$(INSTALL_DIR) $(1)/usr/share/ddns/default
+	$(INSTALL_DATA) ./files/usr/share/ddns/default/ns1.com.json \
+		$(1)/usr/share/ddns/default
+endef
+
+define Package/ddns-scripts-ns1/prerm
 #!/bin/sh
 if [ -z "$${IPKG_INSTROOT}" ]; then
 	/etc/init.d/ddns stop
@@ -425,14 +613,78 @@ exit 0
 endef
 
 
+define Package/ddns-scripts-pdns/install
+	$(INSTALL_DIR) $(1)/usr/lib/ddns
+	$(INSTALL_BIN) ./files/usr/lib/ddns/update_pdns.sh \
+		$(1)/usr/lib/ddns
+
+	$(INSTALL_DIR) $(1)/usr/share/ddns/default
+	$(INSTALL_DATA) ./files/usr/share/ddns/default/pdns.json \
+		$(1)/usr/share/ddns/default
+endef
+
+define Package/ddns-scripts-pdns/prerm
+#!/bin/sh
+if [ -z "$${IPKG_INSTROOT}" ]; then
+	/etc/init.d/ddns stop
+fi
+exit 0
+endef
+
+
+define Package/ddns-scripts-transip/install
+	$(INSTALL_DIR) $(1)/usr/lib/ddns
+	$(INSTALL_BIN) ./files/usr/lib/ddns/update_transip_nl.sh \
+		$(1)/usr/lib/ddns
+
+	$(INSTALL_DIR) $(1)/usr/share/ddns/default
+	$(INSTALL_DATA) ./files/usr/share/ddns/default/transip.nl.json \
+		$(1)/usr/share/ddns/default
+endef
+
+define Package/ddns-scripts-transip/prerm
+#!/bin/sh
+if [ -z "$${IPKG_INSTROOT}" ]; then
+	/etc/init.d/ddns stop
+fi
+exit 0
+endef
+
+
+define Package/ddns-scripts-one/install
+	$(INSTALL_DIR) $(1)/usr/lib/ddns
+	$(INSTALL_BIN) ./files/usr/lib/ddns/update_one_com.sh \
+		$(1)/usr/lib/ddns
+
+	$(INSTALL_DIR) $(1)/usr/share/ddns/default
+	$(INSTALL_DATA) ./files/usr/share/ddns/default/one.com.json \
+		$(1)/usr/share/ddns/default
+endef
+
+define Package/ddns-scripts-one/prerm
+#!/bin/sh
+if [-z "${IPKG_INSTROOT}" ]; then
+	/etc/init.d/ddns stop
+fi
+exit 0
+endef
+
+
 $(eval $(call BuildPackage,ddns-scripts))
 $(eval $(call BuildPackage,ddns-scripts-services))
+$(eval $(call BuildPackage,ddns-scripts-luadns))
 $(eval $(call BuildPackage,ddns-scripts-cloudflare))
+$(eval $(call BuildPackage,ddns-scripts-gcp))
 $(eval $(call BuildPackage,ddns-scripts-freedns))
 $(eval $(call BuildPackage,ddns-scripts-godaddy))
 $(eval $(call BuildPackage,ddns-scripts-digitalocean))
+$(eval $(call BuildPackage,ddns-scripts-dnspod))
 $(eval $(call BuildPackage,ddns-scripts-noip))
 $(eval $(call BuildPackage,ddns-scripts-nsupdate))
 $(eval $(call BuildPackage,ddns-scripts-route53))
 $(eval $(call BuildPackage,ddns-scripts-cnkuai))
 $(eval $(call BuildPackage,ddns-scripts-gandi))
+$(eval $(call BuildPackage,ddns-scripts-pdns))
+$(eval $(call BuildPackage,ddns-scripts-transip))
+$(eval $(call BuildPackage,ddns-scripts-ns1))
+$(eval $(call BuildPackage,ddns-scripts-one))

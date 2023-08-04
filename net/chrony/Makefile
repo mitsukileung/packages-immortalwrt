@@ -8,12 +8,12 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=chrony
-PKG_VERSION:=4.1
+PKG_VERSION:=4.3
 PKG_RELEASE:=2
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.gz
 PKG_SOURCE_URL:=https://download.tuxfamily.org/chrony/
-PKG_HASH:=ed76f2d3f9347ac6221a91ad4bd553dd0565ac188cd7490d0801d08f7171164c
+PKG_HASH:=9d0da889a865f089a5a21610ffb6713e3c9438ce303a63b49c2fb6eaff5b8804
 
 PKG_MAINTAINER:=Miroslav Lichvar <mlichvar0@gmail.com>
 PKG_LICENSE:=GPL-2.0
@@ -21,6 +21,7 @@ PKG_LICENSE_FILES:=COPYING
 PKG_CPE_ID:=cpe:/a:tuxfamily:chrony
 
 PKG_BUILD_DEPENDS:=pps-tools
+PKG_BUILD_FLAGS:=lto
 
 include $(INCLUDE_DIR)/package.mk
 
@@ -39,12 +40,13 @@ define Package/chrony
 $(call Package/chrony/Default)
   TITLE+= (without NTS)
   VARIANT:=normal
+  CONFLICTS:=chrony-nts
 endef
 
 define Package/chrony-nts
 $(call Package/chrony/Default)
   TITLE+= (with NTS)
-  DEPENDS+= +libgnutls +ca-bundle
+  DEPENDS+= +PACKAGE_chrony-nts:libgnutls +PACKAGE_chrony-nts:ca-bundle
   VARIANT:=with-nts
 endef
 

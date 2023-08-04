@@ -2,7 +2,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=prometheus
 PKG_VERSION:=2.25.2
-PKG_RELEASE:=$(AUTORELEASE)
+PKG_RELEASE:=3
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.gz
 PKG_SOURCE_URL:=https://codeload.github.com/prometheus/prometheus/tar.gz/v${PKG_VERSION}?
@@ -14,7 +14,7 @@ PKG_MAINTAINER:=Paul Spooren <mail@aparcar.org>
 
 PKG_BUILD_DEPENDS:=golang/host
 PKG_BUILD_PARALLEL:=1
-PKG_USE_MIPS16:=0
+PKG_BUILD_FLAGS:=no-mips16
 
 GO_PKG:=github.com/prometheus/prometheus/
 GO_PKG_BUILD_PKG:=github.com/prometheus/prometheus/cmd/prometheus/
@@ -47,6 +47,9 @@ Prometheus, a Cloud Native Computing Foundation project, is a systems and
 service monitoring system. It collects metrics from configured targets at given
 intervals, evaluates rule expressions, displays the results, and can trigger
 alerts if some condition is observed to be true.
+
+Default tsdb path is /srv/prometheus, you might want to edit /etc/config/prometheus
+in order to place it on USB storage or external SD card.
 endef
 
 define Package/prometheus/install

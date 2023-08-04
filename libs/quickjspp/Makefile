@@ -5,13 +5,13 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=quickjspp
-PKG_RELEASE:=$(AUTORELEASE)
+PKG_RELEASE:=1
 
 PKG_SOURCE_PROTO:=git
 PKG_SOURCE_URL:=https://github.com/ftk/quickjspp.git
-PKG_SOURCE_DATE:=2021-03-23
-PKG_SOURCE_VERSION:=1aa63ac178e4043fbe37135813545ded506b93ba
-PKG_MIRROR_HASH:=6039311f2c280d22eb1cd7b048ca38ab153ac50189ff8130edb8dc775c9e21df
+PKG_SOURCE_DATE:=2022-07-22
+PKG_SOURCE_VERSION:=9cee4b4d27271d54b95f6f42bfdc534ebeaaeb72
+PKG_MIRROR_HASH:=1d23111923565d8f125ca52386299d7e497328765a30d677f9437687470c89a4
 
 PKG_MAINTAINER:=Tianling Shen <cnsztl@immortalwrt.org>
 
@@ -21,26 +21,33 @@ CMAKE_INSTALL:=1
 include $(INCLUDE_DIR)/package.mk
 include $(INCLUDE_DIR)/cmake.mk
 
-define Package/quickjspp
+define Package/libquickjs
   SECTION:=lib
   CATEGORY:=Libraries
-  URL:=https://github.com/ftk/quickjspp
-  TITLE:=QuickJS wrapper for C++
-  DEPENDS:=+libatomic +libpthread
-  PROVIDES:=quickjs
+  URL:=https://bellard.org/quickjs/
+  TITLE:=A small and embeddable Javascript engine
+  # mips(el) & glibc require it
+  DEPENDS:=+libatomic
 endef
 
-define Package/quickjspp/description
-  QuickJSPP is QuickJS wrapper for C++. It allows you to easily embed
-  Javascript engine into your program.
+define Package/libquickjs/description
+  QuickJS is a small and embeddable Javascript engine. It supports the
+  ES2020 specification including modules, asynchronous generators,
+  proxies and BigInt.
+
+  It optionally supports mathematical extensions such as big decimal
+  floating point numbers (BigDecimal), big binary floating point
+  numbers (BigFloat) and operator overloading.
 endef
 
-define Build/Install
-	$(INSTALL_DIR) $(PKG_INSTALL_DIR)/usr/lib/
-	$(CP) $(PKG_BUILD_DIR)/quickjs/libquickjs.a $(PKG_INSTALL_DIR)/usr/lib/
-	$(INSTALL_DIR) $(PKG_INSTALL_DIR)/usr/include/quickjs/
-	$(CP) $(PKG_BUILD_DIR)/quickjspp.hpp $(PKG_INSTALL_DIR)/usr/include/
-	$(CP) $(PKG_BUILD_DIR)/quickjs/quickjs*.h $(PKG_INSTALL_DIR)/usr/include/quickjs/
+CMAKE_OPTIONS+= \
+	-DBUILD_SHARED_LIBS=ON \
+	-DBUILD_TESTING=OFF \
+	-DCMAKE_EXE_LINKER_FLAGS="-latomic"
+
+define Package/libquickjs/install
+	$(INSTALL_DIR) $(1)/usr/lib/
+	$(CP) $(PKG_INSTALL_DIR)/usr/lib/libquickjs.so $(1)/usr/lib/
 endef
 
-$(eval $(call BuildPackage,quickjspp))
+$(eval $(call BuildPackage,libquickjs))

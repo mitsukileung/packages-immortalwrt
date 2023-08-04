@@ -1,15 +1,11 @@
+# SPDX-License-Identifier: GPL-3.0-only
 #
-# Copyright (C) 2021 ImmortalWrt
-# <https://immortalwrt.org>
-#
-# This is free software, licensed under the GNU General Public License v3.
-# See /LICENSE for more information.
-#
+# Copyright (C) 2021 ImmortalWrt.org
 
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=phicomm-k3screenctrl
-PKG_RELEASE:=$(AUTORELEASE)
+PKG_RELEASE:=2
 
 PKG_SOURCE_PROTO:=git
 PKG_SOURCE_URL:=https://github.com/lwz322/k3screenctrl.git
@@ -18,7 +14,7 @@ PKG_SOURCE_VERSION:=d8896cfad4bdf39f58999f9420807f986300bada
 PKG_MIRROR_HASH:=348ddd828c309559a5b4afb34cfea19051b742c8918f22bc3be3e6f161421708
 
 PKG_LICENSE:=GPL-2.0
-PKG_LICENSE_FILE:=LICENSE
+PKG_LICENSE_FILES:=LICENSE
 PKG_MAINTAINER:=Hamster Tian <haotia@gmail.com>
 
 PKG_FIXUP:=autoreconf

@@ -46,9 +46,10 @@
 #define API_BRANCHES "branches"
 #define API_INDEX "index"
 #define API_JSON "json"
+#define API_JSON_VERSION "v1"
 #define API_JSON_EXT "." API_JSON
 #define API_PACKAGES "packages"
-#define API_REQUEST "api/build"
+#define API_REQUEST "api/v1/build"
 #define API_STATUS_QUEUED "queued"
 #define API_STATUS_STARTED "started"
 #define API_STORE "store"
@@ -63,7 +64,7 @@
 #define DPRINTF(...)
 #endif
 
-static const char server_issues[]="https://github.com/aparcar/asu/issues";
+static const char server_issues[]="https://github.com/openwrt/asu/issues";
 
 static struct ubus_context *ctx;
 static struct uclient *ucl = NULL;
@@ -81,32 +82,47 @@ static bool retry = false;
 static char *board_name = NULL;
 static char *target = NULL;
 static char *distribution = NULL, *version = NULL, *revision = NULL;
+static char *rootfs_type = NULL;
 static int uptodate;
 static char *filename = NULL;
+static void *dlh = NULL;
 static int rc;
+static bool dont_ask = false;
+
+static int avl_verrevcmp(const void *k1, const void *k2, void *ptr);
 
 struct branch {
-	struct list_head list;
+	struct avl_node avl;
 	char *name;
 	char *git_branch;
+	char *path_packages;
+	char *arch_packages;
+	char **repos;
+	struct avl_tree versions;
+	struct list_head package_changes;
+	bool snapshot;
+	unsigned int branch_off_rev;
+};
+static struct avl_tree branches = AVL_TREE_INIT(branches, avl_verrevcmp, false, NULL);
+
+struct branch_version {
+	struct avl_node avl;
+	struct branch *branch;
+	char *path;
 	char *version;
 	char *version_code;
 	char *version_number;
 	bool snapshot;
-	time_t release_time;
-	time_t eol_time;
-	char *path;
-	char *path_packages;
-	char *arch_packages;
-	char *pubkey;
-	char *updates;
-	char **repos;
-	char **extra_repos;
-	char **extra_repos_names;
-	char **default_packages;
-	char **device_packages;
 };
-static LIST_HEAD(branches);
+
+struct package_changes {
+	struct list_head list;
+	unsigned int revision;
+	char *source;
+	char *target;
+	bool mandatory;
+};
+static LIST_HEAD(selected_package_changes);
 
 struct avl_pkg {
 	struct avl_node avl;
@@ -126,12 +142,14 @@ static int debug = 0;
 enum {
 	BOARD_BOARD_NAME,
 	BOARD_RELEASE,
+	BOARD_ROOTFS_TYPE,
 	__BOARD_MAX,
 };
 
 static const struct blobmsg_policy board_policy[__BOARD_MAX] = {
 	[BOARD_BOARD_NAME] = { .name = "board_name", .type = BLOBMSG_TYPE_STRING },
 	[BOARD_RELEASE] = { .name = "release", .type = BLOBMSG_TYPE_TABLE },
+	[BOARD_ROOTFS_TYPE] = { .name = "rootfs_type", .type = BLOBMSG_TYPE_STRING },
 };
 
 /*
@@ -187,38 +205,49 @@ static const struct blobmsg_policy upgtest_policy[__UPGTEST_MAX] = {
  * policy for branches.json
  */
 enum {
-	BRANCH_DATE_EOL,
-	BRANCH_DATE_RELEASE,
 	BRANCH_ENABLED,
-	BRANCH_EXTRA_REPOS,
 	BRANCH_GIT_BRANCH,
+	BRANCH_BRANCH_OFF_REV,
 	BRANCH_NAME,
 	BRANCH_PATH,
 	BRANCH_PATH_PACKAGES,
-	BRANCH_PUBKEY,
-	BRANCH_REPOS,
 	BRANCH_SNAPSHOT,
+	BRANCH_REPOS,
 	BRANCH_TARGETS,
 	BRANCH_UPDATES,
 	BRANCH_VERSIONS,
+	BRANCH_PACKAGE_CHANGES,
 	__BRANCH_MAX,
 };
 
 static const struct blobmsg_policy branches_policy[__BRANCH_MAX] = {
-	[BRANCH_DATE_EOL] = { .name = "eol", .type = BLOBMSG_TYPE_STRING },
-	[BRANCH_DATE_RELEASE] = { .name = "release_date", .type = BLOBMSG_TYPE_STRING },
 	[BRANCH_ENABLED] = { .name = "enabled", .type = BLOBMSG_TYPE_BOOL },
-	[BRANCH_EXTRA_REPOS] = { .name = "extra_repos", .type = BLOBMSG_TYPE_TABLE },
 	[BRANCH_GIT_BRANCH] = { .name = "git_branch", .type = BLOBMSG_TYPE_STRING },
+	[BRANCH_BRANCH_OFF_REV] = { .name = "branch_off_rev", .type = BLOBMSG_TYPE_INT32 },
 	[BRANCH_NAME] = { .name = "name", .type = BLOBMSG_TYPE_STRING },
 	[BRANCH_PATH] = { .name = "path", .type = BLOBMSG_TYPE_STRING },
 	[BRANCH_PATH_PACKAGES] = { .name = "path_packages", .type = BLOBMSG_TYPE_STRING },
-	[BRANCH_PUBKEY] = { .name = "pubkey", .type = BLOBMSG_TYPE_STRING },
-	[BRANCH_REPOS] = { .name = "repos", .type = BLOBMSG_TYPE_ARRAY },
 	[BRANCH_SNAPSHOT] = { .name = "snapshot", .type = BLOBMSG_TYPE_BOOL },
+	[BRANCH_REPOS] = { .name = "repos", .type = BLOBMSG_TYPE_ARRAY },
 	[BRANCH_TARGETS] = { .name = "targets", .type = BLOBMSG_TYPE_TABLE },
 	[BRANCH_UPDATES] = { .name = "updates", .type = BLOBMSG_TYPE_STRING },
 	[BRANCH_VERSIONS] = { .name = "versions", .type = BLOBMSG_TYPE_ARRAY },
+	[BRANCH_PACKAGE_CHANGES] = { .name = "package_changes", .type = BLOBMSG_TYPE_ARRAY },
+};
+
+enum {
+	PACKAGE_CHANGES_SOURCE,
+	PACKAGE_CHANGES_TARGET,
+	PACKAGE_CHANGES_REVISION,
+	PACKAGE_CHANGES_MANDATORY,
+	__PACKAGE_CHANGES_MAX,
+};
+
+static const struct blobmsg_policy package_changes_policy[__PACKAGE_CHANGES_MAX] = {
+	[PACKAGE_CHANGES_SOURCE] = { .name = "source", .type = BLOBMSG_TYPE_STRING },
+	[PACKAGE_CHANGES_TARGET] = { .name = "target", .type = BLOBMSG_TYPE_STRING },
+	[PACKAGE_CHANGES_REVISION] = { .name = "revision", .type = BLOBMSG_TYPE_INT32 },
+	[PACKAGE_CHANGES_MANDATORY] = { .name = "mandatory", .type = BLOBMSG_TYPE_BOOL },
 };
 
 /*
@@ -227,22 +256,17 @@ static const struct blobmsg_policy branches_policy[__BRANCH_MAX] = {
 enum {
 	TARGET_ARCH_PACKAGES,
 	TARGET_BINDIR,
-	TARGET_BUILD_AT,
-	TARGET_DEFAULT_PACKAGES,
 	TARGET_DEVICE_PACKAGES,
 	TARGET_ENQUEUED_AT,
-	TARGET_IMAGE_PREFIX,
 	TARGET_IMAGES,
-	TARGET_MESSAGE,
+	TARGET_DETAIL,
 	TARGET_MANIFEST,
 	TARGET_METADATA_VERSION,
 	TARGET_REQUEST_HASH,
-	TARGET_SOURCE_DATE_EPOCH,
 	TARGET_QUEUE_POSITION,
 	TARGET_STATUS,
 	TARGET_STDERR,
 	TARGET_STDOUT,
-	TARGET_SUPPORTED_DEVICES,
 	TARGET_TARGET,
 	TARGET_TITLES,
 	TARGET_VERSION_CODE,
@@ -253,22 +277,17 @@ enum {
 static const struct blobmsg_policy target_policy[__TARGET_MAX] = {
 	[TARGET_ARCH_PACKAGES] = { .name = "arch_packages", .type = BLOBMSG_TYPE_STRING },
 	[TARGET_BINDIR] = { .name = "bin_dir", .type = BLOBMSG_TYPE_STRING },
-	[TARGET_BUILD_AT] = { .name = "built_at", .type = BLOBMSG_TYPE_STRING },
-	[TARGET_DEFAULT_PACKAGES] = { .name = "default_packages", .type = BLOBMSG_TYPE_ARRAY },
 	[TARGET_DEVICE_PACKAGES] = { .name = "device_packages", .type = BLOBMSG_TYPE_ARRAY },
 	[TARGET_ENQUEUED_AT] = { .name = "enqueued_at", .type = BLOBMSG_TYPE_STRING },
-	[TARGET_IMAGE_PREFIX] = { .name = "image_prefix", .type = BLOBMSG_TYPE_STRING },
 	[TARGET_IMAGES] = { .name = "images", .type = BLOBMSG_TYPE_ARRAY },
 	[TARGET_MANIFEST] = { .name = "manifest", .type = BLOBMSG_TYPE_TABLE },
-	[TARGET_MESSAGE] = { .name = "message", .type = BLOBMSG_TYPE_STRING },
+	[TARGET_DETAIL] = { .name = "detail", .type = BLOBMSG_TYPE_STRING },
 	[TARGET_METADATA_VERSION] = { .name = "metadata_version", .type = BLOBMSG_TYPE_INT32 },
 	[TARGET_REQUEST_HASH] = { .name = "request_hash", .type = BLOBMSG_TYPE_STRING },
-	[TARGET_SOURCE_DATE_EPOCH] = { .name = "source_date_epoch", .type = BLOBMSG_TYPE_STRING },
 	[TARGET_QUEUE_POSITION] = { .name = "queue_position", .type = BLOBMSG_TYPE_INT32 },
 	[TARGET_STATUS] = { .name = "status", .type = BLOBMSG_TYPE_STRING },
 	[TARGET_STDERR] = { .name = "stderr", .type = BLOBMSG_TYPE_STRING },
 	[TARGET_STDOUT] = { .name = "stdout", .type = BLOBMSG_TYPE_STRING },
-	[TARGET_SUPPORTED_DEVICES] = { .name = "supported_devices", .type = BLOBMSG_TYPE_ARRAY },
 	[TARGET_TARGET] = { .name = "target", .type = BLOBMSG_TYPE_STRING },
 	[TARGET_TITLES] = { .name = "titles", .type = BLOBMSG_TYPE_ARRAY },
 	[TARGET_VERSION_CODE] = { .name = "version_code", .type = BLOBMSG_TYPE_STRING },
@@ -314,6 +333,7 @@ enum {
 	H_LEN,
 	H_RANGE,
 	H_UNKNOWN_PACKAGE,
+	H_QUEUE_POSITION,
 	__H_MAX
 };
 
@@ -321,6 +341,7 @@ static const struct blobmsg_policy header_policy[__H_MAX] = {
 	[H_LEN] = { .name = "content-length", .type = BLOBMSG_TYPE_STRING },
 	[H_RANGE] = { .name = "content-range", .type = BLOBMSG_TYPE_STRING },
 	[H_UNKNOWN_PACKAGE] = { .name = "x-unknown-package", .type = BLOBMSG_TYPE_STRING },
+	[H_QUEUE_POSITION] = { .name = "x-queue-position", .type = BLOBMSG_TYPE_INT32 },
 };
 
 /*
@@ -330,6 +351,7 @@ static int load_config() {
 	struct uci_context *uci_ctx;
 	struct uci_package *uci_attendedsysupgrade;
 	struct uci_section *uci_s;
+	char *url;
 
 	uci_ctx = uci_alloc_context();
 	if (!uci_ctx)
@@ -342,13 +364,23 @@ static int load_config() {
 		fprintf(stderr, "Failed to load attendedsysupgrade config\n");
 		return -1;
 	}
-
 	uci_s = uci_lookup_section(uci_ctx, uci_attendedsysupgrade, "server");
 	if (!uci_s) {
+		fprintf(stderr, "Failed to read server config section\n");
+		return -1;
+	}
+	url = uci_lookup_option_string(uci_ctx, uci_s, "url");
+	if (!url) {
 		fprintf(stderr, "Failed to read server url from config\n");
 		return -1;
 	}
-	serverurl = strdup(uci_lookup_option_string(uci_ctx, uci_s, "url"));
+	if (strncmp(url, "https://", strlen("https://")) &&
+	    strncmp(url, "http://", strlen("http://"))) {
+		fprintf(stderr, "Server url invalid (needs to be http://... or https://...)\n");
+		return -1;
+	}
+
+	serverurl = strdup(url);
 
 	uci_s = uci_lookup_section(uci_ctx, uci_attendedsysupgrade, "client");
 	if (!uci_s) {
@@ -414,6 +446,68 @@ static int verrevcmp(const char *val, const char *ref)
 	return 0;
 }
 
+static int avl_verrevcmp(const void *k1, const void *k2, void *ptr)
+{
+	const char *d1 = (const char *)k1, *d2 = (const char*)k2;
+
+	return verrevcmp(d1, d2);
+}
+
+/*
+ * replace '-rc' by '~' in string
+ */
+static inline void release_replace_rc(char *ver)
+{
+	char *tmp;
+
+	tmp = strstr(ver, "-rc");
+	if (tmp && strlen(tmp) > 3) {
+		*tmp = '~';
+		memmove(tmp + 1, tmp + 3, strlen(tmp + 3) + 1);
+	}
+}
+
+/*
+ * OpenWrt release version string comperator
+ * replaces '-rc' by '~' to fix ordering of release(s) (candidates)
+ * using the void release_replace_rc(char *ver) function above.
+ */
+static int openwrt_release_verrevcmp(const char *ver1, const char *ver2)
+{
+	char mver1[16], mver2[16];
+
+	strncpy(mver1, ver1, sizeof(mver1) - 1);
+	mver1[sizeof(mver1) - 1] = '\0';
+	strncpy(mver2, ver2, sizeof(mver2) - 1);
+	mver2[sizeof(mver2) - 1] = '\0';
+
+	release_replace_rc(mver1);
+	release_replace_rc(mver2);
+
+	return verrevcmp(mver1, mver2);
+}
+
+/*
+ * Select package_changes from branch to global list
+ */
+static void grab_changes(struct branch *br, unsigned int rev)
+{
+	struct package_changes *c, *n;
+
+#ifdef AUC_DEBUG
+	if (debug)
+		fprintf(stderr, "grabbing changes for branch %s from revision %u\n", br->name, rev);
+#endif
+
+	list_for_each_entry(c, &br->package_changes, list) {
+		if (c->revision == 0 || c->revision > rev) {
+			n = malloc(sizeof(struct package_changes));
+			memcpy(n, c, sizeof(struct package_changes));
+			INIT_LIST_HEAD(&n->list);
+			list_add_tail(&n->list, &selected_package_changes);
+		}
+	}
+}
 
 /**
  * UBUS response callbacks
@@ -426,6 +520,7 @@ static int verrevcmp(const char *val, const char *ref)
 #define ANSI_COLOR_RESET ANSI_ESC "[0m"
 #define ANSI_COLOR_RED ANSI_ESC "[1;31m"
 #define ANSI_COLOR_GREEN ANSI_ESC "[1;32m"
+#define ANSI_COLOR_BLUE ANSI_ESC "[1;34m"
 #define ANSI_CURSOR_SAFE "[s"
 #define ANSI_CURSOR_RESTORE "[u"
 #define ANSI_ERASE_LINE "[K"
@@ -435,12 +530,61 @@ static int verrevcmp(const char *val, const char *ref)
 #define PKG_NOT_FOUND 0x4
 #define PKG_ERROR 0x8
 
+static bool ask_user(const char *message)
+{
+	char user_input;
+	fflush(stdin);
+	fprintf(stderr, "%s [N/y] ", message);
+	user_input = getchar();
+	fflush(stdin);
+	if ((user_input == 'y') || (user_input == 'Y'))
+		return true;
+
+	return false;
+}
+
 static inline bool is_builtin_pkg(const char *pkgname)
 {
 	return !strcmp(pkgname, "libc") ||
 		!strcmp(pkgname, "librt") ||
 		!strcmp(pkgname, "libpthread") ||
 		!strcmp(pkgname, "kernel");
+}
+
+static const char *apply_package_changes(const char *pkgname, bool interactive)
+{
+	struct package_changes *pkc;
+	const char *mpkgname = pkgname;
+
+	list_for_each_entry(pkc, &selected_package_changes, list) {
+		/* package_change additions are dealt with later */
+		if (!pkc->source)
+			continue;
+
+		if (strcmp(pkc->source, mpkgname))
+			continue;
+
+		if (!pkc->mandatory && interactive) {
+			if (pkc->target)
+				fprintf(stderr, "Package %s should be replaced by %s.\n", pkc->source, pkc->target);
+			else
+				fprintf(stderr, "Package %s should be removed.\n", pkc->source);
+
+			if (dont_ask)
+				pkc->mandatory = true;
+			else
+				pkc->mandatory = ask_user("Apply change");
+		}
+
+		if (!pkc->mandatory)
+			continue;
+
+		mpkgname = pkc->target;
+
+		if (!mpkgname)
+			break;
+	}
+	return mpkgname;
 }
 
 static void pkglist_check_cb(struct ubus_request *req, int type, struct blob_attr *msg)
@@ -450,6 +594,8 @@ static void pkglist_check_cb(struct ubus_request *req, int type, struct blob_att
 	struct avl_pkg *pkg;
 	int rem;
 	int cmpres;
+	const char *pkgname;
+	struct package_changes *pkc;
 
 	blobmsg_parse(packages_policy, __PACKAGES_MAX, tb, blobmsg_data(msg), blobmsg_len(msg));
 
@@ -457,13 +603,32 @@ static void pkglist_check_cb(struct ubus_request *req, int type, struct blob_att
 		return;
 
 	blobmsg_for_each_attr(cur, tb[PACKAGES_PACKAGES], rem) {
-		if (is_builtin_pkg(blobmsg_name(cur)))
+		pkgname = blobmsg_name(cur);
+		if (is_builtin_pkg(pkgname))
 			continue;
 
-		pkg = avl_find_element(&pkg_tree, blobmsg_name(cur), pkg, avl);
+		pkgname = apply_package_changes(pkgname, true);
+		if (!pkgname) {
+			fprintf(stderr, " %s: %s%s -> (not installed)%s\n",
+				blobmsg_name(cur), ANSI_COLOR_BLUE,
+				blobmsg_get_string(cur), ANSI_COLOR_RESET);
+			continue;
+		}
+
+		pkg = avl_find_element(&pkg_tree, pkgname, pkg, avl);
 		if (!pkg) {
-			fprintf(stderr, "installed package %s cannot be found in remote list!\n", blobmsg_name(cur));
+			fprintf(stderr, "installed package %s%s%s cannot be found in remote list!\n",
+				ANSI_COLOR_RED, pkgname, ANSI_COLOR_RESET);
 			*status |= PKG_NOT_FOUND;
+			continue;
+		}
+
+		if (pkgname != blobmsg_name(cur)) {
+			fprintf(stderr, " %s%s: %s -> %s: %s%s\n", ANSI_COLOR_BLUE,
+				blobmsg_name(cur),
+				blobmsg_get_string(cur), pkgname, pkg->version,
+				ANSI_COLOR_RESET);
+			*status |= PKG_UPGRADE;
 			continue;
 		}
 
@@ -484,6 +649,22 @@ static void pkglist_check_cb(struct ubus_request *req, int type, struct blob_att
 				blobmsg_get_string(cur), pkg->version,
 				(cmpres)?ANSI_COLOR_RESET:"");
 	}
+
+	list_for_each_entry(pkc, &selected_package_changes, list) {
+		/* deal only with package_change additions now */
+		if (pkc->source)
+			continue;
+
+		pkg = avl_find_element(&pkg_tree, pkc->target, pkg, avl);
+		if (!pkg) {
+			fprintf(stderr, "new package %s%s%s cannot be found in remote list!\n",
+				ANSI_COLOR_RED, pkc->target, ANSI_COLOR_RESET);
+			*status |= PKG_NOT_FOUND;
+			continue;
+		}
+		fprintf(stderr, " %s: %s(not installed) -> %s%s\n", pkc->target, ANSI_COLOR_BLUE,
+			pkg->version, ANSI_COLOR_RESET);
+	}
 }
 
 /*
@@ -497,6 +678,8 @@ static void pkglist_req_cb(struct ubus_request *req, int type, struct blob_attr 
 	int rem;
 	struct avl_pkg *pkg;
 	void *table;
+	const char *pkgname;
+	struct package_changes *pkc;
 
 	blobmsg_parse(packages_policy, __PACKAGES_MAX, tb, blob_data(msg), blob_len(msg));
 
@@ -508,14 +691,28 @@ static void pkglist_req_cb(struct ubus_request *req, int type, struct blob_attr 
 	table = blobmsg_open_table(buf, "packages_versions");
 
 	blobmsg_for_each_attr(cur, tb[PACKAGES_PACKAGES], rem) {
-		if (is_builtin_pkg(blobmsg_name(cur)))
+		pkgname = blobmsg_name(cur);
+		if (is_builtin_pkg(pkgname))
 			continue;
 
-		pkg = avl_find_element(&pkg_tree, blobmsg_name(cur), pkg, avl);
+		pkgname = apply_package_changes(pkgname, false);
+		pkg = avl_find_element(&pkg_tree, pkgname, pkg, avl);
 		if (!pkg)
 			continue;
 
-		blobmsg_add_string(buf, blobmsg_name(cur), pkg->version);
+		blobmsg_add_string(buf, pkgname, pkg->version);
+	}
+
+	list_for_each_entry(pkc, &selected_package_changes, list) {
+		/* add new packages to request */
+		if (pkc->source)
+			continue;
+
+		pkg = avl_find_element(&pkg_tree, pkc->target, pkg, avl);
+		if (!pkg)
+			continue;
+
+		blobmsg_add_string(buf, pkc->target, pkg->version);
 	}
 	blobmsg_close_table(buf, table);
 };
@@ -571,7 +768,9 @@ static void board_cb(struct ubus_request *req, int type, struct blob_attr *msg) 
 		board_name = strdup(blobmsg_get_string(tb[BOARD_BOARD_NAME]));
 	}
 
-	blobmsg_add_string(buf, "distro", distribution);
+	if (tb[BOARD_ROOTFS_TYPE])
+		rootfs_type = strdup(blobmsg_get_string(tb[BOARD_ROOTFS_TYPE]));
+
 	blobmsg_add_string(buf, "target", target);
 	blobmsg_add_string(buf, "version", version);
 	blobmsg_add_string(buf, "revision", revision);
@@ -661,6 +860,12 @@ static void request_done(struct uclient *cl)
 static void header_done_cb(struct uclient *cl)
 {
 	struct blob_attr *tb[__H_MAX];
+	struct jsonblobber *jsb = (struct jsonblobber *)cl->priv;
+	struct blob_buf *outbuf = NULL;
+
+	if (jsb)
+		outbuf = jsb->outbuf;
+
 	uint64_t resume_offset = 0, resume_end, resume_size;
 
 	if (uclient_http_redirect(cl)) {
@@ -685,65 +890,26 @@ static void header_done_cb(struct uclient *cl)
 		request_done(cl);
 		rc=-ESRCH;
 		break;
-	case 409:
-		fprintf(stderr, "Conflicting packages requested\n");
-		request_done(cl);
-		rc=-EINVAL;
-		break;
-	case 412:
-		fprintf(stderr, "%s target %s (%s) not found. Please report this at %s\n",
-			distribution, target, board_name, server_issues);
-		request_done(cl);
-		rc=-ENOSYS;
-		break;
-	case 413:
-		fprintf(stderr, "image too big.\n");
-		rc=-E2BIG;
-		request_done(cl);
-		break;
-	case 416:
-		fprintf(stderr, "File download already fully retrieved; nothing to do.\n");
-		request_done(cl);
-		break;
 	case 422:
 		fprintf(stderr, "unknown package '%s' requested.\n",
 			blobmsg_get_string(tb[H_UNKNOWN_PACKAGE]));
 		rc=-ENOPKG;
 		request_done(cl);
 		break;
-	case 501:
-		fprintf(stderr, "ImageBuilder didn't produce sysupgrade file.\n");
-		rc=-ENODATA;
-		request_done(cl);
-		break;
-	case 204:
-		fprintf(stdout, "system is up to date.\n");
-		uptodate=1;
-		rc=0;
-		request_done(cl);
-		break;
-	case 206:
-		if (!cur_resume) {
-			fprintf(stderr, "Error: Partial content received, full content requested\n");
-			request_done(cl);
-			break;
-		}
-
-		if (!tb[H_RANGE]) {
-			fprintf(stderr, "Content-Range header is missing\n");
-			break;
-		}
-
-		if (sscanf(blobmsg_get_string(tb[H_RANGE]),
-			   "bytes %"PRIu64"-%"PRIu64"/%"PRIu64,
-			   &resume_offset, &resume_end, &resume_size) != 3) {
-			fprintf(stderr, "Content-Range header is invalid\n");
-			break;
-		}
+	case 201:
 	case 202:
 		retry = true;
+		if (!outbuf)
+			break;
+
+		blobmsg_add_u32(outbuf, "status", cl->status_code);
+
+		if (tb[H_QUEUE_POSITION])
+			blobmsg_add_u32(outbuf, "queue_position", blobmsg_get_u32(tb[H_QUEUE_POSITION]));
+
 		break;
 	case 200:
+		retry = false;
 		if (cl->priv)
 			break;
 
@@ -914,7 +1080,6 @@ static int server_request(const char *url, struct blob_buf *inbuf, struct blob_b
  * ustream-ssl
  */
 static int init_ustream_ssl(void) {
-	void *dlh;
 	glob_t gl;
 	int i;
 
@@ -935,14 +1100,6 @@ static int init_ustream_ssl(void) {
 	for (i = 0; i < gl.gl_pathc; i++)
 		ssl_ops->context_add_ca_crt_file(ssl_ctx, gl.gl_pathv[i]);
 
-	return 0;
-}
-
-static int ask_user(void)
-{
-	fprintf(stderr, "Are you sure you want to continue the upgrade process? [N/y] ");
-	if (getchar() != 'y')
-		return -EINTR;
 	return 0;
 }
 
@@ -971,53 +1128,7 @@ static char* alloc_replace_var(char *in, const char *var, const char *replace)
 	return res;
 }
 
-static time_t parse_reldate(char *str)
-{
-	int m, d, y;
-
-	if (!str ||
-	    strlen(str) != 10 ||
-	    sscanf(str, "%4d-%2d-%2d", &y, &m, &d) != 3)
-		return (time_t)0;
-
-	struct tm time = {
-		.tm_mday = d,
-		.tm_mon = m - 1,
-		.tm_year = y - 1900,
-	};
-	return timegm(&time);
-}
-
-static int json_to_string_arrays(struct blob_attr *j, char ***vars, char ***names)
-{
-	int i = 0;
-	struct blob_attr *cur;
-	int rem;
-
-	if (j) {
-		i = blobmsg_check_array(j, BLOBMSG_TYPE_STRING);
-		if (i < 0)
-			return i;
-	}
-
-	if (i > 0) {
-		*vars = calloc((i + 1), sizeof(char *));
-		if (names)
-			*names = calloc((i + 1), sizeof(char *));
-
-		i = 0;
-		blobmsg_for_each_attr(cur, j, rem) {
-			if (names)
-				(*names)[i] = strdup(blobmsg_name(cur));
-
-			(*vars)[i++] = strdup(blobmsg_get_string(cur));
-		}
-	}
-
-	return i;
-}
-
-static int request_target(struct branch *br, char *url)
+static int request_target(struct branch_version *bver, char *url)
 {
 	static struct blob_buf boardbuf;
 	struct blob_attr *tbr[__REPLY_MAX], *tb[__TARGET_MAX];
@@ -1038,12 +1149,7 @@ static int request_target(struct branch *br, char *url)
 
 	if (!tb[TARGET_METADATA_VERSION] ||
 	    !tb[TARGET_ARCH_PACKAGES] ||
-	    !tb[TARGET_DEFAULT_PACKAGES] ||
-	    !tb[TARGET_DEVICE_PACKAGES] ||
-	    !tb[TARGET_IMAGE_PREFIX] ||
 	    !tb[TARGET_IMAGES] ||
-	    !tb[TARGET_SOURCE_DATE_EPOCH] ||
-	    !tb[TARGET_SUPPORTED_DEVICES] ||
 	    !tb[TARGET_TARGET]) {
 		blob_buf_free(&boardbuf);
 		return -ENODATA;
@@ -1057,17 +1163,14 @@ static int request_target(struct branch *br, char *url)
 	if (strcmp(blobmsg_get_string(tb[TARGET_TARGET]), target))
 		return -EINVAL;
 
-	if (strcmp(blobmsg_get_string(tb[TARGET_ARCH_PACKAGES]), br->arch_packages))
+	if (strcmp(blobmsg_get_string(tb[TARGET_ARCH_PACKAGES]), bver->branch->arch_packages))
 		return -EINVAL;
 
-	json_to_string_arrays(tb[TARGET_DEFAULT_PACKAGES], &br->default_packages, NULL);
-	json_to_string_arrays(tb[TARGET_DEVICE_PACKAGES], &br->device_packages, NULL);
-
 	if (tb[TARGET_VERSION_CODE])
-		br->version_code = strdup(blobmsg_get_string(tb[TARGET_VERSION_CODE]));
+		bver->version_code = strdup(blobmsg_get_string(tb[TARGET_VERSION_CODE]));
 
 	if (tb[TARGET_VERSION_NUMBER])
-		br->version_number = strdup(blobmsg_get_string(tb[TARGET_VERSION_NUMBER]));
+		bver->version_number = strdup(blobmsg_get_string(tb[TARGET_VERSION_NUMBER]));
 
 	blob_buf_free(&boardbuf);
 	return 0;
@@ -1087,74 +1190,131 @@ static char* validate_target(struct blob_attr *branch)
 
 static void process_branch(struct blob_attr *branch, bool only_active)
 {
-	struct blob_attr *tb[__BRANCH_MAX];
-	struct blob_attr *curver;
-	int remver;
+	struct blob_attr *tb[__BRANCH_MAX], *pkc[__PACKAGE_CHANGES_MAX];
+	struct blob_attr *curver, *curpkc;
+	int remver, rempkc;
 	struct branch *br;
-	char *tmp, *arch_packages, *board_json_file;
+	struct package_changes *pkce;
+	char *tmp, *board_json_file;
 	const char *brname;
 
 	blobmsg_parse(branches_policy, __BRANCH_MAX, tb, blobmsg_data(branch), blobmsg_len(branch));
 
 	/* mandatory fields */
 	if (!(tb[BRANCH_ENABLED] && blobmsg_get_bool(tb[BRANCH_ENABLED]) &&
-		tb[BRANCH_NAME] && tb[BRANCH_PATH]) && tb[BRANCH_PATH_PACKAGES] &&
-		tb[BRANCH_UPDATES] && tb[BRANCH_PUBKEY] && tb[BRANCH_REPOS] &&
-		tb[BRANCH_VERSIONS] && tb[BRANCH_TARGETS])
+		tb[BRANCH_NAME] && tb[BRANCH_PATH] && tb[BRANCH_PATH_PACKAGES] &&
+		tb[BRANCH_VERSIONS] && tb[BRANCH_TARGETS]))
 		return;
 
 	brname = blobmsg_get_string(tb[BRANCH_NAME]);
 	if (only_active && strncmp(brname, version, strlen(brname)))
 		return;
 
+	br = calloc(1, sizeof(struct branch));
+	avl_init(&br->versions, avl_verrevcmp, false, NULL);
+	INIT_LIST_HEAD(&br->package_changes);
+
 	/* check if target is offered in branch and get arch_packages */
-	arch_packages = validate_target(tb[BRANCH_TARGETS]);
-	if (!arch_packages)
+	br->arch_packages = validate_target(tb[BRANCH_TARGETS]);
+	if (!br->arch_packages) {
+		free(br);
 		return;
+	}
+
+	if (tb[BRANCH_GIT_BRANCH])
+		br->git_branch = strdup(blobmsg_get_string(tb[BRANCH_GIT_BRANCH]));
+
+	if (tb[BRANCH_BRANCH_OFF_REV])
+		br->branch_off_rev = blobmsg_get_u32(tb[BRANCH_BRANCH_OFF_REV]);
+	else
+		br->branch_off_rev = 0;
+
+	if (tb[BRANCH_SNAPSHOT])
+		br->snapshot = blobmsg_get_bool(tb[BRANCH_SNAPSHOT]);
+	else
+		br->snapshot = false;
+
+	br->name = strdup(blobmsg_get_string(tb[BRANCH_NAME]));
+	br->path_packages = alloc_replace_var(blobmsg_get_string(tb[BRANCH_PATH_PACKAGES]), "branch", br->name);
+	if (!br->path_packages) {
+		free(br->name);
+		free(br->arch_packages);
+		free(br);
+		return;
+	}
+
+	/* parse package changes */
+	blobmsg_for_each_attr(curpkc, tb[BRANCH_PACKAGE_CHANGES], rempkc) {
+		if (blobmsg_type(curpkc) != BLOBMSG_TYPE_TABLE)
+			continue;
+
+		blobmsg_parse(package_changes_policy, __PACKAGE_CHANGES_MAX, pkc, blobmsg_data(curpkc), blobmsg_len(curpkc));
+		if (!pkc[PACKAGE_CHANGES_REVISION] || (!pkc[PACKAGE_CHANGES_SOURCE] && !pkc[PACKAGE_CHANGES_TARGET]))
+			continue;
+
+		pkce = calloc(1, sizeof(struct package_changes));
+		if (!pkce)
+			break;
+
+		if (pkc[PACKAGE_CHANGES_SOURCE])
+			pkce->source = strdup(blobmsg_get_string(pkc[PACKAGE_CHANGES_SOURCE]));
+
+		if (pkc[PACKAGE_CHANGES_TARGET])
+			pkce->target = strdup(blobmsg_get_string(pkc[PACKAGE_CHANGES_TARGET]));
+
+		pkce->revision = blobmsg_get_u32(pkc[PACKAGE_CHANGES_REVISION]);
+
+		if (pkc[PACKAGE_CHANGES_MANDATORY])
+			pkce->mandatory = blobmsg_get_bool(pkc[PACKAGE_CHANGES_MANDATORY]);
+
+		list_add_tail(&pkce->list, &br->package_changes);
+	}
 
 	/* add each version of the branch */
 	blobmsg_for_each_attr(curver, tb[BRANCH_VERSIONS], remver) {
-		br = malloc(sizeof(struct branch));
+		if (blobmsg_type(curver) != BLOBMSG_TYPE_STRING)
+			continue;
 
-		br->snapshot = tb[BRANCH_SNAPSHOT] && blobmsg_get_bool(tb[BRANCH_SNAPSHOT]);
-		if (tb[BRANCH_GIT_BRANCH])
-			br->git_branch = strdup(blobmsg_get_string(tb[BRANCH_GIT_BRANCH]));
-
-		br->name = strdup(blobmsg_get_string(tb[BRANCH_NAME]));
-		br->path = strdup(blobmsg_get_string(tb[BRANCH_PATH]));
-		br->path_packages = strdup(blobmsg_get_string(tb[BRANCH_PATH_PACKAGES]));
-		br->pubkey = strdup(blobmsg_get_string(tb[BRANCH_PUBKEY]));
-		br->updates = strdup(blobmsg_get_string(tb[BRANCH_UPDATES]));
-		br->release_time = parse_reldate(blobmsg_get_string(tb[BRANCH_DATE_RELEASE]));
-		br->eol_time = parse_reldate(blobmsg_get_string(tb[BRANCH_DATE_RELEASE]));
-
-		json_to_string_arrays(tb[BRANCH_REPOS], &br->repos, NULL);
-		json_to_string_arrays(tb[BRANCH_EXTRA_REPOS], &br->extra_repos, &br->extra_repos_names);
-
-		br->version = strdup(blobmsg_get_string(curver));
-		br->path = alloc_replace_var(blobmsg_get_string(tb[BRANCH_PATH]), "version", br->version);
-		br->path_packages = alloc_replace_var(blobmsg_get_string(tb[BRANCH_PATH_PACKAGES]), "branch", br->name);
-		br->arch_packages = arch_packages;
-		if (!br->path || !br->path_packages) {
-			free(br);
+		struct branch_version *bver = calloc(1, sizeof(struct branch_version));
+		bver->snapshot = !!strcasestr(blobmsg_get_string(curver), "snapshot");
+		bver->path = alloc_replace_var(blobmsg_get_string(tb[BRANCH_PATH]), "version", blobmsg_get_string(curver));
+		if (!bver->path) {
+			free(bver);
 			continue;
 		}
-
-		asprintf(&board_json_file, "%s/%s/%s/%s/%s/%s%s", serverurl, API_JSON,
-			br->path, API_TARGETS, target, board_name, API_JSON_EXT);
+		bver->version = strdup(blobmsg_get_string(curver));
+		if (!bver->version) {
+			free(bver->path);
+			free(bver);
+			continue;
+		}
+		bver->branch = br;
+		if (asprintf(&board_json_file, "%s/%s/%s/%s/%s/%s/%s%s", serverurl, API_JSON,
+			     API_JSON_VERSION, bver->path, API_TARGETS, target, board_name,
+			     API_JSON_EXT) < 0) {
+			free(bver->version);
+			free(bver->path);
+			free(bver);
+			continue;
+		}
 		tmp = board_json_file;
 		while ((tmp = strchr(tmp, ',')))
 			*tmp = '_';
 
-		if (request_target(br, board_json_file)) {
+		if (request_target(bver, board_json_file)) {
 			free(board_json_file);
-			free(br);
+			free(bver->version);
+			free(bver->path);
+			free(bver);
 			continue;
 		}
-
 		free(board_json_file);
-		list_add_tail(&br->list, &branches);
+		bver->avl.key = bver->version;
+		avl_insert(&br->versions, &bver->avl);
 	}
+
+	br->avl.key = br->name;
+	avl_insert(&branches, &br->avl);
 }
 
 static int request_branches(bool only_active)
@@ -1164,10 +1324,11 @@ static int request_branches(bool only_active)
 	struct blob_attr *tb[__REPLY_MAX];
 	int rem;
 	char url[256];
+	struct blob_attr *data;
 
 	blobmsg_buf_init(&brbuf);
-	snprintf(url, sizeof(url), "%s/%s/%s%s", serverurl, API_JSON,
-		API_BRANCHES, API_JSON_EXT);
+	snprintf(url, sizeof(url), "%s/%s/%s/%s%s", serverurl, API_JSON,
+		API_JSON_VERSION, API_BRANCHES, API_JSON_EXT);
 
 	if ((rc = server_request(url, NULL, &brbuf))) {
 		blob_buf_free(&brbuf);
@@ -1176,10 +1337,16 @@ static int request_branches(bool only_active)
 
 	blobmsg_parse(reply_policy, __REPLY_MAX, tb, blob_data(brbuf.head), blob_len(brbuf.head));
 
-	if (!tb[REPLY_ARRAY])
+	/* newer server API replies OBJECT, older API replies ARRAY... */
+	if ((!tb[REPLY_ARRAY] && !tb[REPLY_OBJECT]))
 		return -ENODATA;
 
-	blobmsg_for_each_attr(cur, tb[REPLY_ARRAY], rem)
+	if (tb[REPLY_OBJECT])
+		data = tb[REPLY_OBJECT];
+	else
+		data = tb[REPLY_ARRAY];
+
+	blobmsg_for_each_attr(cur, data, rem)
 		process_branch(cur, only_active);
 
 	blob_buf_free(&brbuf);
@@ -1187,38 +1354,114 @@ static int request_branches(bool only_active)
 	return 0;
 }
 
-static struct branch *select_branch(char *name, char *select_version)
+static void free_branches()
+{
+	struct branch *br, *tmp;
+	struct branch_version *bver, *tmp2;
+	struct package_changes *pkce, *tmp3;
+
+	avl_for_each_element_safe(&branches, br, avl, tmp) {
+		free(br->name);
+		free(br->path_packages);
+		free(br->arch_packages);
+
+		avl_for_each_element_safe(&br->versions, bver, avl, tmp2) {
+			avl_delete(&br->versions, &bver->avl);
+			free(bver->version);
+			free(bver->version_code);
+			free(bver->version_number);
+			free(bver->path);
+			free(bver);
+		}
+
+		list_for_each_entry_safe(pkce, tmp3, &br->package_changes, list) {
+			list_del(&pkce->list);
+			free(pkce->source);
+			free(pkce->target);
+			free(pkce);
+		}
+
+		avl_delete(&branches, &br->avl);
+	}
+}
+
+static struct branch *get_current_branch()
 {
 	struct branch *br, *abr = NULL;
 
-	if (!name)
-		name = version;
-
-	list_for_each_entry(br, &branches, list) {
+	avl_for_each_element(&branches, br, avl) {
 		/* if branch name doesn't match version *prefix*, skip */
-		if (strncmp(br->name, name, strlen(br->name)))
-			continue;
-
-		if (select_version) {
-			if (!strcmp(br->version, select_version)) {
-				abr = br;
-				break;
-			}
-		} else {
-			/* if we are on a snapshot branch, stay there */
-			if (strcasestr(version, "snapshot")) {
-				if (strcasestr(br->version, "snapshot")) {
-					abr = br;
-					break;
-				}
-			} else {
-				if (!abr || (verrevcmp(br->version, abr->version) > 0))
-					abr = br;
-			}
+		if (!strncasecmp(br->name, version, strlen(br->name))) {
+			abr = br;
+			break;
 		}
 	}
 
 	return abr;
+}
+
+static int revision_from_version_code(const char *version_code)
+{
+	int res;
+
+	if (sscanf(version_code, "r%d-", &res) == 1)
+		return res;
+
+	return -1;
+}
+
+static struct branch_version *select_branch(char *name, char *select_version)
+{
+	struct branch *br;
+	struct branch_version *bver, *abver = NULL;
+
+	if (!name)
+		name = version;
+
+	avl_for_each_element(&branches, br, avl) {
+		/* if branch name doesn't match version *prefix*, skip */
+		if (strncasecmp(br->name, name, strlen(br->name)))
+			continue;
+
+		avl_for_each_element(&br->versions, bver, avl) {
+			if (select_version) {
+				if (!strcasecmp(bver->version, select_version)) {
+					abver = bver;
+					break;
+				}
+			} else {
+				if (!strcasecmp(name, "snapshot")) {
+					/* we are on the main snapshot branch */
+					if (br->snapshot && bver->snapshot) {
+						abver = bver;
+						break;
+					}
+				} else {
+					/* skip main snapshot branch */
+					if (br->snapshot)
+						continue;
+
+					if (strcasestr(version, "snapshot")) {
+						/* we are on a stable snapshot branch or coming from main snapshot branch */
+						if (bver->snapshot) {
+							abver = bver;
+							break;
+						}
+					} else {
+						if (bver->snapshot)
+							continue;
+
+						if (!abver || (openwrt_release_verrevcmp(abver->version, bver->version) < 0))
+							abver = bver;
+					}
+				}
+			}
+		}
+		if (abver)
+			break;
+	}
+
+	return abver;
 }
 
 static int add_upg_packages(struct blob_attr *reply, char *arch)
@@ -1250,17 +1493,22 @@ static int add_upg_packages(struct blob_attr *reply, char *arch)
 	}
 
 	blobmsg_for_each_attr(cur, packages, rem) {
-		avpk = malloc(sizeof(struct avl_pkg));
+		avpk = calloc(1, sizeof(struct avl_pkg));
 		if (!avpk)
 			return -ENOMEM;
 
 		avpk->name = strdup(blobmsg_name(cur));
-		if (!avpk->name)
+		if (!avpk->name) {
+			free(avpk);
 			return -ENOMEM;
+		}
 
 		avpk->version = strdup(blobmsg_get_string(cur));
-		if (!avpk->version)
+		if (!avpk->version) {
+			free(avpk->name);
+			free(avpk);
 			return -ENOMEM;
+		}
 
 		avpk->avl.key = avpk->name;
 		if (avl_insert(&pkg_tree, &avpk->avl)) {
@@ -1283,7 +1531,7 @@ static int add_upg_packages(struct blob_attr *reply, char *arch)
 	return 0;
 }
 
-static int request_packages(struct branch *branch)
+static int request_packages(struct branch_version *bver)
 {
 	static struct blob_buf pkgbuf, archpkgbuf;
 	char url[256];
@@ -1292,22 +1540,23 @@ static int request_packages(struct branch *branch)
 	fprintf(stderr, "Requesting package lists...\n");
 
 	blobmsg_buf_init(&archpkgbuf);
-	snprintf(url, sizeof(url), "%s/%s/%s/%s/%s/%s%s", serverurl, API_JSON,
-		branch->path, API_TARGETS, target, API_INDEX, API_JSON_EXT);
+	snprintf(url, sizeof(url), "%s/%s/%s/%s/%s/%s/%s%s", serverurl, API_JSON,
+		API_JSON_VERSION, bver->path, API_TARGETS, target, API_INDEX, API_JSON_EXT);
 	if ((rc = server_request(url, NULL, &archpkgbuf))) {
 		blob_buf_free(&archpkgbuf);
 		return rc;
 	};
 
-	ret = add_upg_packages(archpkgbuf.head, branch->arch_packages);
+	ret = add_upg_packages(archpkgbuf.head, bver->branch->arch_packages);
 	blob_buf_free(&archpkgbuf);
 
 	if (ret)
 		return ret;
 
 	blobmsg_buf_init(&pkgbuf);
-	snprintf(url, sizeof(url), "%s/%s/%s/%s/%s-%s%s", serverurl, API_JSON,
-		branch->path, API_PACKAGES, branch->arch_packages, API_INDEX, API_JSON_EXT);
+	snprintf(url, sizeof(url), "%s/%s/%s/%s/%s/%s-%s%s", serverurl, API_JSON,
+		API_JSON_VERSION, bver->path, API_PACKAGES, bver->branch->arch_packages,
+		API_INDEX, API_JSON_EXT);
 	if ((rc = server_request(url, NULL, &pkgbuf))) {
 		blob_buf_free(&archpkgbuf);
 		blob_buf_free(&pkgbuf);
@@ -1321,7 +1570,7 @@ static int request_packages(struct branch *branch)
 }
 
 
-static int check_installed_packages(struct blob_attr *pkgs)
+static int check_installed_packages(void)
 {
 	static struct blob_buf allpkg;
 	uint32_t id;
@@ -1373,7 +1622,7 @@ static int system_is_efi(void)
 static inline int system_is_efi(void) { return 0; }
 #endif
 
-static int get_image_by_type(struct blob_attr *images, const char *typestr, char **image_name, char **image_sha256)
+static int get_image_by_type(struct blob_attr *images, const char *typestr, const char *fstype, char **image_name, char **image_sha256)
 {
 	struct blob_attr *tb[__IMAGES_MAX];
 	struct blob_attr *cur;
@@ -1387,6 +1636,9 @@ static int get_image_by_type(struct blob_attr *images, const char *typestr, char
 		    !tb[IMAGES_SHA256])
 			continue;
 
+		if (fstype && strcmp(blobmsg_get_string(tb[IMAGES_FILESYSTEM]), fstype))
+			continue;
+
 		if (!strcmp(blobmsg_get_string(tb[IMAGES_TYPE]), typestr)) {
 			*image_name = strdup(blobmsg_get_string(tb[IMAGES_NAME]));
 			*image_sha256 = strdup(blobmsg_get_string(tb[IMAGES_SHA256]));
@@ -1398,10 +1650,14 @@ static int get_image_by_type(struct blob_attr *images, const char *typestr, char
 	return ret;
 }
 
-static int select_image(struct blob_attr *images, char **image_name, char **image_sha256)
+static int select_image(struct blob_attr *images, const char *target_fstype, char **image_name, char **image_sha256)
 {
 	const char *combined_type;
-	int ret;
+	const char *fstype = rootfs_type;
+	int ret = -ENOENT;
+
+	if (target_fstype)
+		fstype = target_fstype;
 
 	if (system_is_efi())
 		combined_type = "combined-efi";
@@ -1410,11 +1666,32 @@ static int select_image(struct blob_attr *images, char **image_name, char **imag
 
 	DPRINTF("images: %s\n", blobmsg_format_json_indent(images, true, 0));
 
-	ret = get_image_by_type(images, "sysupgrade", image_name, image_sha256);
-	if (!ret)
-		return 0;
+	if (fstype) {
+		ret = get_image_by_type(images, "sysupgrade", fstype, image_name, image_sha256);
+		if (!ret)
+			return 0;
 
-	ret = get_image_by_type(images, combined_type, image_name, image_sha256);
+		ret = get_image_by_type(images, combined_type, fstype, image_name, image_sha256);
+		if (!ret)
+			return 0;
+
+		ret = get_image_by_type(images, "sdcard", fstype, image_name, image_sha256);
+		if (!ret)
+			return 0;
+	}
+
+	/* fallback to squashfs unless fstype requested explicitly */
+	if (!target_fstype) {
+		ret = get_image_by_type(images, "sysupgrade", "squashfs", image_name, image_sha256);
+		if (!ret)
+			return 0;
+
+		ret = get_image_by_type(images, combined_type, "squashfs", image_name, image_sha256);
+		if (!ret)
+			return 0;
+
+		ret = get_image_by_type(images, "sdcard", fstype, image_name, image_sha256);
+	}
 
 	return ret;
 }
@@ -1443,7 +1720,7 @@ static bool validate_sha256(char *filename, char *sha256str)
 
 sha256close:
 	fflush(f);
-	fclose(f);
+	pclose(f);
 sha256free:
 	free(cmd);
 	free(resstr);
@@ -1457,52 +1734,103 @@ static inline bool status_delay(const char *status)
 	       !strcmp(API_STATUS_STARTED, status);
 }
 
+static void usage(const char *arg0)
+{
+	fprintf(stdout, "%s: Attended sysUpgrade CLI client\n", arg0);
+	fprintf(stdout, "Usage: auc [-b <branch>] [-B <ver>] [-c] %s[-f] [-h] [-r] [-y]\n",
+#ifdef AUC_DEBUG
+"[-d] "
+#else
+""
+#endif
+		);
+	fprintf(stdout, " -b <branch>\tuse specific release branch\n");
+	fprintf(stdout, " -B <ver>\tuse specific release version\n");
+	fprintf(stdout, " -c\t\tonly check if system is up-to-date\n");
+#ifdef AUC_DEBUG
+	fprintf(stdout, " -d\t\tenable debugging output\n");
+#endif
+	fprintf(stdout, " -f\t\tuse force\n");
+	fprintf(stdout, " -h\t\toutput help\n");
+	fprintf(stdout, " -n\t\tdry-run (don't download or upgrade)\n");
+	fprintf(stdout, " -r\t\tcheck only for release upgrades\n");
+	fprintf(stdout, " -F <fstype>\toverride filesystem type\n");
+	fprintf(stdout, " -y\t\tdon't wait for user confirmation\n");
+	fprintf(stdout, "\n");
+	fprintf(stdout, "Please report issues to improve the server:\n");
+	fprintf(stdout, "%s\n", server_issues);
+}
+
+
 /* this main function is too big... todo: split */
 int main(int args, char *argv[]) {
 	static struct blob_buf checkbuf, infobuf, reqbuf, imgbuf, upgbuf;
-	struct branch *branch;
+	struct branch *current_branch, *running_branch;
+	struct branch_version *target_version;
+	int running_revision, covered_revision = 0;
 	uint32_t id;
 	int valid;
 	char url[256];
 	char *sanetized_board_name, *image_name, *image_sha256, *tmp;
+	char *cmd_target_branch = NULL, *cmd_target_version = NULL, *cmd_target_fstype = NULL;
 	struct blob_attr *tbr[__REPLY_MAX];
 	struct blob_attr *tb[__TARGET_MAX] = {}; /* make sure tb is NULL initialized even if blobmsg_parse isn't called */
 	struct stat imgstat;
-	int check_only = 0;
-	int retry_delay = 0;
-	int upg_check = 0;
-	int revcmp;
+	bool check_only = false;
+	bool retry_delay = false;
+	bool upg_check = false;
+	bool dry_run = false;
+	int revcmp = 0;
+	int addargs;
 	unsigned char argc = 1;
-	bool force = false, use_get = false, in_queue = false;
+	bool force = false, use_get = false, in_queue = false, release_only = false;
 
-	snprintf(user_agent, sizeof(user_agent), "%s (%s)", argv[0], AUC_VERSION);
+	snprintf(user_agent, sizeof(user_agent), "%s/%s", argv[0], AUC_VERSION);
 	fprintf(stdout, "%s\n", user_agent);
 
 	while (argc<args) {
 		if (!strncmp(argv[argc], "-h", 3) ||
 		    !strncmp(argv[argc], "--help", 7)) {
-			fprintf(stdout, "%s: Attended sysUpgrade CLI client\n", argv[0]);
-			fprintf(stdout, "Usage: auc [-d] [-h]\n");
-			fprintf(stdout, " -c\tonly check if system is up-to-date\n");
-			fprintf(stdout, " -f\tuse force\n");
-#ifdef AUC_DEBUG
-			fprintf(stdout, " -d\tenable debugging output\n");
-#endif
-			fprintf(stdout, " -h\toutput help\n");
+			usage(argv[0]);
 			return 0;
 		}
 
+		addargs = 0;
 #ifdef AUC_DEBUG
 		if (!strncmp(argv[argc], "-d", 3))
 			debug = 1;
 #endif
+		if (!strncmp(argv[argc], "-b", 3)) {
+			cmd_target_branch = argv[argc + 1];
+			addargs = 1;
+		}
+
+		if (!strncmp(argv[argc], "-B", 3)) {
+			cmd_target_version = argv[argc + 1];
+			addargs = 1;
+		}
+
 		if (!strncmp(argv[argc], "-c", 3))
-			check_only = 1;
+			check_only = true;
 
 		if (!strncmp(argv[argc], "-f", 3))
 			force = true;
 
-		argc++;
+		if (!strncmp(argv[argc], "-F", 3)) {
+			cmd_target_fstype = argv[argc + 1];
+			addargs = 1;
+		}
+
+		if (!strncmp(argv[argc], "-n", 3))
+			dry_run = true;
+
+		if (!strncmp(argv[argc], "-r", 3))
+			release_only = true;
+
+		if (!strncmp(argv[argc], "-y", 3))
+			dont_ask = true;
+
+		argc += 1 + addargs;
 	};
 
 	if (load_config()) {
@@ -1551,35 +1879,71 @@ int main(int args, char *argv[]) {
 		goto freebufs;
 	}
 
+	fprintf(stdout, "Server:    %s\n", serverurl);
 	fprintf(stdout, "Running:   %s %s on %s (%s)\n", version, revision, target, board_name);
+	if (cmd_target_fstype && rootfs_type && strcmp(rootfs_type, cmd_target_fstype))
+		fprintf(stderr, "WARNING: will change rootfs type from '%s' to '%s'\n",
+			rootfs_type, cmd_target_fstype);
 
-	if (request_branches(true)) {
-		rc=-ENETUNREACH;
+	if (request_branches(!(cmd_target_branch || cmd_target_version))) {
+		rc=-ENODATA;
 		goto freeboard;
 	}
 
-	branch = select_branch(NULL, NULL);
-	if (!branch) {
+	running_branch = get_current_branch();
+	running_revision = revision_from_version_code(revision);
+	if (!running_branch)
+		fprintf(stderr, "WARNING: cannot determing currently running branch.\n");
+
+	target_version = select_branch(cmd_target_branch, cmd_target_version);
+	if (!target_version) {
 		rc=-EINVAL;
 		goto freebranches;
 	}
 
-	fprintf(stdout, "Available: %s %s\n", branch->version_number, branch->version_code);
+	fprintf(stdout, "Available: %s %s\n", target_version->version_number, target_version->version_code);
 
-	revcmp = strcmp(revision, branch->version_code);
+	if (running_branch->snapshot && !target_version->branch->snapshot)
+		revcmp = (running_revision < target_version->branch->branch_off_rev)?-1:1;
+	else if (!running_branch->snapshot && target_version->branch->snapshot)
+		revcmp = -1;
+	else
+		revcmp = verrevcmp(version, target_version->version_number);
+
 	if (revcmp < 0)
 			upg_check |= PKG_UPGRADE;
 	else if (revcmp > 0)
 			upg_check |= PKG_DOWNGRADE;
 
-	if ((rc = request_packages(branch)))
-		goto freebranches;
-
-	upg_check |= check_installed_packages(reqbuf.head);
-	if (upg_check & PKG_ERROR) {
-		rc=-ENOPKG;
+	if (release_only && !(upg_check & PKG_UPGRADE)) {
+		fprintf(stderr, "Nothing to be updated. Use '-f' to force.\n");
+		rc = 0;
 		goto freebranches;
 	}
+
+	if (target_version->branch == running_branch)
+		grab_changes(running_branch, running_revision);
+	else if (revcmp > 0)
+		fprintf(stderr, "WARNING: Downgrade to older branch may not work as expected!\n");
+	else avl_for_element_range(running_branch, target_version->branch, current_branch, avl) {
+		if (current_branch == running_branch)
+			grab_changes(running_branch, running_revision);
+		else
+			grab_changes(current_branch, covered_revision);
+
+		if (current_branch->branch_off_rev > 0)
+			covered_revision = current_branch->branch_off_rev;
+	}
+
+	if ((rc = request_packages(target_version)))
+		goto freebranches;
+
+	upg_check |= check_installed_packages();
+	if (upg_check & PKG_ERROR) {
+		rc = -ENOPKG;
+		goto freebranches;
+	}
+
 	if (!upg_check && !force) {
 		fprintf(stderr, "Nothing to be updated. Use '-f' to force.\n");
 		rc=0;
@@ -1588,20 +1952,32 @@ int main(int args, char *argv[]) {
 
 	if (!force && (upg_check & PKG_DOWNGRADE)) {
 		fprintf(stderr, "Refusing to downgrade. Use '-f' to force.\n");
-		rc=-ENOTRECOVERABLE;
+		rc = -ENOTRECOVERABLE;
+		goto freebranches;
+	};
+
+	if (!force && (upg_check & PKG_NOT_FOUND)) {
+		fprintf(stderr, "Not all installed packages found in remote lists. Use '-f' to force.\n");
+		rc = -ENOTRECOVERABLE;
 		goto freebranches;
 	};
 
 	if (check_only)
 		goto freebranches;
 
-	rc = ask_user();
-	if (rc)
-		goto freebranches;
+	if (!dont_ask) {
+		if (!ask_user("Are you sure you want to continue the upgrade process?")) {
+			rc = 0;
+			goto freebranches;
+		}
+	}
 
-	blobmsg_add_string(&reqbuf, "version", branch->version);
-	blobmsg_add_string(&reqbuf, "version_code", branch->version_code);
+	blobmsg_add_string(&reqbuf, "version", target_version->version);
+	blobmsg_add_string(&reqbuf, "version_code", target_version->version_code);
 	blobmsg_add_string(&reqbuf, "target", target);
+
+	if (cmd_target_fstype || rootfs_type)
+		blobmsg_add_string(&reqbuf, "filesystem", cmd_target_fstype?cmd_target_fstype:rootfs_type);
 
 	sanetized_board_name = strdup(board_name);
 	tmp = sanetized_board_name;
@@ -1631,8 +2007,15 @@ int main(int args, char *argv[]) {
 
 		blobmsg_parse(target_policy, __TARGET_MAX, tb, blobmsg_data(tbr[REPLY_OBJECT]), blobmsg_len(tbr[REPLY_OBJECT]));
 
-		if (tb[TARGET_REQUEST_HASH] && tb[TARGET_STATUS]) {
-			if (status_delay(blobmsg_get_string(tb[TARGET_STATUS]))) {
+		/* for compatibility with old server version, also support status in 200 reply */
+		if (tb[TARGET_STATUS]) {
+			tmp = blobmsg_get_string(tb[TARGET_STATUS]);
+			if (status_delay(tmp))
+				retry = 1;
+		}
+
+		if (tb[TARGET_REQUEST_HASH]) {
+			if (retry) {
 				if (!retry_delay)
 					fputs("Requesting build", stderr);
 
@@ -1659,10 +2042,8 @@ int main(int args, char *argv[]) {
 					 blobmsg_get_string(tb[TARGET_REQUEST_HASH]));
 				DPRINTF("polling via GET %s\n", url);
 			}
-			retry = true;
 			use_get = true;
 		} else if (retry_delay) {
-			fputc('\n', stderr);
 			retry_delay = 0;
 		}
 
@@ -1689,14 +2070,20 @@ int main(int args, char *argv[]) {
 		goto freebranches;
 	}
 
-	if ((rc = select_image(tb[TARGET_IMAGES], &image_name, &image_sha256)))
+	if ((rc = select_image(tb[TARGET_IMAGES], cmd_target_fstype, &image_name, &image_sha256)))
 		goto freebranches;
 
 	snprintf(url, sizeof(url), "%s/%s/%s/%s", serverurl, API_STORE,
 	         blobmsg_get_string(tb[TARGET_BINDIR]),
 	         image_name);
 
-	DPRINTF("downloading image from %s\n", url);
+	if (dry_run) {
+		fprintf(stderr, "\nImage available at %s\n", url);
+		rc = 0;
+		goto freebranches;
+	}
+
+	fprintf(stderr, "\nDownloading image from %s\n", url);
 	rc = server_request(url, NULL, NULL);
 	if (rc)
 		goto freebranches;
@@ -1750,6 +2137,7 @@ int main(int args, char *argv[]) {
 	sleep(10);
 
 freebranches:
+	free_branches();
 	if (rc && tb[TARGET_STDOUT]
 #ifdef AUC_DEBUG
 	    && !debug
@@ -1763,13 +2151,15 @@ freebranches:
 	    )
 		fputs(blobmsg_get_string(tb[TARGET_STDERR]), stderr);
 
-	if (tb[TARGET_MESSAGE]) {
-		fputs(blobmsg_get_string(tb[TARGET_MESSAGE]), stderr);
+	if (tb[TARGET_DETAIL]) {
+		fputs(blobmsg_get_string(tb[TARGET_DETAIL]), stderr);
 		fputc('\n', stderr);
 	}
 
-	/* ToDo */
 freeboard:
+	if (rootfs_type)
+		free(rootfs_type);
+
 	free(board_name);
 	free(target);
 	free(distribution);
@@ -1795,6 +2185,9 @@ freeubus:
 
 	if (ucl)
 		uclient_free(ucl);
+
+	if (dlh)
+		dlclose(dlh);
 
 	if (rc)
 		fprintf(stderr, "%s (%d)\n", strerror(-1 * rc), -1 * rc);

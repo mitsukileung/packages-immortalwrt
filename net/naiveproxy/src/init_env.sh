@@ -40,12 +40,9 @@ export naive_flags="
 is_official_build=true
 exclude_unwind_tables=true
 enable_resource_allowlist_generation=false
-symbol_level=0
+symbol_level=1
 is_clang=true
 use_sysroot=false
-
-use_allocator=\"none\"
-use_allocator_shim=false
 
 fatal_linker_warnings=false
 treat_warnings_as_errors=false
@@ -54,18 +51,18 @@ enable_base_tracing=false
 use_udev=false
 use_aura=false
 use_ozone=false
-use_x11=false
 use_gio=false
+use_gtk=false
 use_platform_icu_alternatives=true
 use_glib=false
 
 disable_file_support=true
 enable_websockets=false
-disable_ftp_support=true
 use_kerberos=false
 enable_mdns=false
 enable_reporting=false
 include_transport_security_state_preload_list=false
+use_nss_certs=false
 
 target_os=\"openwrt\"
 target_cpu=\"${naive_arch}\"
@@ -74,6 +71,7 @@ target_sysroot=\"${toolchain_dir}\""
 case "${target_arch}" in
 "arm")
 	naive_flags+=" arm_version=0 arm_cpu=\"${cpu_type}\""
+	case "${cpu_type}" in "arm1176jzf-s"|"arm926ej-s"|"mpcore"|"xscale") naive_flags+=" arm_use_thumb=false" ;; esac
 	if [ -n "${cpu_subtype}" ]; then
 		if grep -q "neon" <<< "${cpu_subtype}"; then
 			neon_flag="arm_use_neon=true"
@@ -85,8 +83,17 @@ case "${target_arch}" in
 		naive_flags+=" arm_float_abi=\"soft\" arm_use_neon=false"
 	fi
 	;;
-"mips"|"mips64"|"mipsel"|"mips64el")
-	naive_flags+=" use_gold=false is_cfi=false use_cfi_icall=false use_thin_lto=false mips_arch_variant=\"r2\""
-	[[ "${target_arch}" =~ "mips"|"mipsel" ]] && naive_flags+=" mips_float_abi=\"soft\" mips_tune=\"${cpu_type}\""
+"arm64")
+	[ -n "${cpu_type}" ] && naive_flags+=" arm_cpu=\"${cpu_type}\""
+	;;
+"mipsel"|"mips64el")
+	naive_flags+=" use_thin_lto=false chrome_pgo_phase=0 mips_arch_variant=\"r2\""
+	if [ "${target_arch}" == "mipsel" ]; then
+		if [ "${cpu_subtype}" == "24kf" ]; then
+			naive_flags+=" mips_float_abi=\"hard\""
+		else
+			naive_flags+=" mips_float_abi=\"soft\""
+		fi
+	fi
 	;;
 esac

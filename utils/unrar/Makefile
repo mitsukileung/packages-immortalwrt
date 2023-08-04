@@ -6,12 +6,12 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=unrar
-PKG_VERSION:=6.0.6
-PKG_RELEASE:=$(AUTORELEASE)
+PKG_VERSION:=6.1.3
+PKG_RELEASE:=2
 
 PKG_SOURCE:=unrarsrc-$(PKG_VERSION).tar.gz
 PKG_SOURCE_URL:=https://www.rarlab.com/rar
-PKG_HASH:=011ef7290d3394a62bb5bfced914cd510a7eea7255cf69417f9c952bb6056588
+PKG_HASH:=d05022442009202a792e588bec58921c123ff046fc755f7f2272871a5bd79636
 PKG_BUILD_DIR:=$(BUILD_DIR)/$(PKG_NAME)-$(PKG_VERSION)-$(BUILD_VARIANT)/unrar
 
 PKG_MAINTAINER:=Álvaro Fernández Rojas <noltari@gmail.com>, \
@@ -22,10 +22,11 @@ PKG_CPE_ID:=cpe:/a:rarlab:unrar
 
 PKG_INSTALL:=1
 PKG_BUILD_PARALLEL:=1
+PKG_BUILD_FLAGS:=lto
 
 include $(INCLUDE_DIR)/package.mk
 
-TARGET_CXXFLAGS +=-fno-rtti -flto
+TARGET_CXXFLAGS +=-fno-rtti
 TARGET_LDFLAGS +=$(FPIC) -Wl,--gc-sections $(if $(CONFIG_USE_GLIBC),-lpthread)
 
 define Package/unrar/Default

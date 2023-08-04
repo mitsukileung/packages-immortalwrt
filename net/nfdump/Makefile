@@ -6,12 +6,12 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=nfdump
-PKG_VERSION:=1.6.23
-PKG_RELEASE:=$(AUTORELEASE)
+PKG_VERSION:=1.7.2
+PKG_RELEASE:=1
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.gz
 PKG_SOURCE_URL:=https://codeload.github.com/phaag/nfdump/tar.gz/v$(PKG_VERSION)?
-PKG_HASH:=8c5a7959e66bb90fcbd8ad508933a14ebde4ccf7f4ae638d8f18c9473c63af33
+PKG_HASH:=0545b792e81f5edd51a2fdfbfcc4eac7ba8087005811ab41c34bfac4d78fe926
 
 PKG_MAINTAINER:=W. Michael Petullo <mike@flyn.org>
 PKG_LICENSE:=BSD-3-Clause
@@ -20,13 +20,14 @@ PKG_LICENSE_FILES:=COPYING
 PKG_FIXUP:=autoreconf
 PKG_INSTALL:=1
 PKG_BUILD_PARALLEL:=1
+PKG_BUILD_FLAGS:=lto
 
 include $(INCLUDE_DIR)/package.mk
 
 define Package/nfdump
   SECTION:=net
   CATEGORY:=Network
-  DEPENDS:= +libbz2 +USE_MUSL:musl-fts
+  DEPENDS:= +flex +libbz2 +USE_MUSL:musl-fts +libatomic
   TITLE:= nfdump
   URL:=https://github.com/phaag/nfdump/
 endef
@@ -39,7 +40,6 @@ define Package/nfdump/conffiles
 /etc/config/nfcapd
 endef
 
-TARGET_CFLAGS += -flto
 TARGET_LDFLAGS += -Wl,--as-needed $(if $(CONFIG_USE_MUSL),-lfts)
 
 define Package/nfdump/install

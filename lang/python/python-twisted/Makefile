@@ -1,5 +1,6 @@
 #
-# Copyright (C) 2006-2011, 2015-2018 OpenWrt.org
+# Copyright (C) 2006-2011 OpenWrt.org
+# Copyright (C) 2015-2016, 2018-2023 Jeffery To
 #
 # This is free software, licensed under the GNU General Public License v2.
 # See /LICENSE for more information.
@@ -8,11 +9,11 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=python-twisted
-PKG_VERSION:=21.2.0
-PKG_RELEASE:=2
+PKG_VERSION:=22.10.0
+PKG_RELEASE:=1
 
 PYPI_NAME:=Twisted
-PKG_HASH:=77544a8945cf69b98d2946689bbe0c75de7d145cdf11f391dd487eae8fc95a12
+PKG_HASH:=32acbd40a94f5f46e7b42c109bfae2b302250945561783a8b7a059048f2d4d31
 
 PKG_BUILD_DEPENDS:=libtirpc
 
@@ -20,6 +21,8 @@ PKG_LICENSE:=MIT
 PKG_LICENSE_FILES:=LICENSE
 PKG_MAINTAINER:=Jeffery To <jeffery.to@gmail.com>
 PKG_CPE_ID:=cpe:/a:twistedmatrix:twisted
+
+PKG_BUILD_DEPENDS:=python-incremental/host
 
 include ../pypi.mk
 include $(INCLUDE_DIR)/package.mk
@@ -39,9 +42,9 @@ define Package/python3-twisted
       +python3-bcrypt \
       +python3-constantly \
       +python3-cryptography \
+      +python3-hyperlink \
       +python3-idna \
       +python3-incremental \
-      +python3-hyperlink \
       +python3-pkg-resources \
       +python3-pyasn1 \
       +python3-pyopenssl \

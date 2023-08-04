@@ -5,13 +5,13 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=rapidjson
-PKG_RELEASE:=$(AUTORELEASE)
+PKG_RELEASE:=1
 
 PKG_SOURCE_PROTO:=git
 PKG_SOURCE_URL:=https://github.com/Tencent/rapidjson.git
-PKG_SOURCE_DATE:=2021-01-06
-PKG_SOURCE_VERSION:=585042c02ba6350e10fc43df8beee1bc097f4c5f
-PKG_MIRROR_HASH:=ef7d015b91f58355b02ce8356214ec7d6bdc3807d01b220834faa00afbcd7a7f
+PKG_SOURCE_DATE:=2023-08-07
+PKG_SOURCE_VERSION:=949c771b03de448bdedea80c44a4a5f65284bfeb
+PKG_MIRROR_HASH:=12ab8d122daaab475aed7dbe75b289c2f6545ef7741c655c6ce602d4e61296fc
 
 PKG_LICENSE:=BSD 3-Clause
 PKG_LICENSE_FILES:=LICENSE
@@ -23,7 +23,8 @@ CMAKE_INSTALL:=1
 include $(INCLUDE_DIR)/package.mk
 include $(INCLUDE_DIR)/cmake.mk
 
-CMAKE_OPTIONS+= -DRAPIDJSON_BUILD_DOC=OFF \
+CMAKE_OPTIONS+= \
+	-DRAPIDJSON_BUILD_DOC=OFF \
 	-DRAPIDJSON_BUILD_EXAMPLES=OFF \
 	-DRAPIDJSON_BUILD_TESTS=OFF
 
@@ -32,6 +33,7 @@ define Package/rapidjson
   CATEGORY:=Libraries
   URL:=https://github.com/Tencent/rapidjson
   TITLE:=rapidjson JSON parser/generator for C++
+  BUILDONLY:=1
 endef
 
 define Package/rapidjson/description

@@ -8,8 +8,8 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=libmariadb
-PKG_VERSION:=3.1.12
-PKG_RELEASE:=$(AUTORELEASE)
+PKG_VERSION:=3.1.18
+PKG_RELEASE:=1
 
 PKG_SOURCE:=mariadb-connector-c-$(PKG_VERSION)-src.tar.gz
 PKG_SOURCE_URL := \
@@ -17,7 +17,7 @@ PKG_SOURCE_URL := \
 	https://mirror.lstn.net/mariadb/connector-c-$(PKG_VERSION) \
 	https://ftp.yz.yamagata-u.ac.jp/pub/dbms/mariadb/connector-c-$(PKG_VERSION) \
 	https://downloads.mariadb.org/interstitial/connector-c-$(PKG_VERSION)
-PKG_HASH:=2f5ae14708b4813e4ff6857d152c22e6fc0e551c9fa743c1ef81a68e3254fe63
+PKG_HASH:=b01ecacf7531c2f36d90708845488e66462bf63627c58cb5986bd1c0833e4d9c
 PKG_BUILD_DIR:=$(BUILD_DIR)/mariadb-connector-c-$(PKG_VERSION)-src
 
 PKG_MAINTAINER:=Michal Hrusecky <Michal@Hrusecky.net>
@@ -29,7 +29,7 @@ MARIADB_CONF_DIR:=/etc/mysql
 MARIADB_PLUGIN_DIR:=/usr/lib/mariadb/plugin
 
 MARIADB_PORT=3306
-MARIADB_SOCKET=/var/run/mysqld/mysqld.sock
+MARIADB_SOCKET=/var/run/mysql/mysql.sock
 
 MARIADB_CLIENT_PLUGINS := \
 	auth_gssapi_client \
@@ -67,7 +67,7 @@ endef
 
 define Package/$(PKG_NAME)
   $(call Package/$(PKG_NAME)/Default)
-  DEPENDS:=+mariadb-common \
+  DEPENDS:= \
 	  $(ICONV_DEPENDS) \
 	  +libopenssl \
 	  +zlib
@@ -75,10 +75,6 @@ define Package/$(PKG_NAME)
   MENU:=1
   PROVIDES:=libmariadbclient libmysqlclient libmysqlclient-r
   ABI_VERSION:=3
-endef
-
-define Package/$(PKG_NAME)/conffiles
-$(MARIADB_CONF_DIR)/conf.d/50-client.cnf
 endef
 
 define Package/$(PKG_NAME)/description
@@ -95,6 +91,8 @@ CMAKE_OPTIONS += -DWITH_UNIT_TESTS=0
 CMAKE_OPTIONS += -DCMAKE_CROSSCOMPILING=1
 
 CMAKE_OPTIONS += \
+	-DDEFAULT_CHARSET=utf8 \
+	-DDEFAULT_COLLATION=utf8_general_ci \
 	-DINSTALL_INCLUDEDIR=include/mysql \
 	-DINSTALL_LIBDIR=lib \
 	-DINSTALL_PLUGINDIR=lib/mariadb/plugin \
@@ -155,7 +153,6 @@ define Package/$(PKG_NAME)/install
 		$(PKG_INSTALL_DIR)$(MARIADB_PLUGIN_DIR)/sha256_password.so \
 		$(1)$(MARIADB_PLUGIN_DIR)
 	$(INSTALL_BIN) $(PKG_INSTALL_DIR)/usr/lib/libmariadb.so.$(ABI_VERSION) $(1)/usr/lib
-	$(INSTALL_DATA) conf/50-client.cnf $(1)$(MARIADB_CONF_DIR)/conf.d
 endef
 
 define BuildPlugin

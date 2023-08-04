@@ -6,12 +6,12 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=libdrm
-PKG_VERSION:=2.4.104
-PKG_RELEASE:=2
+PKG_VERSION:=2.4.115
+PKG_RELEASE:=1
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.xz
 PKG_SOURCE_URL:=https://dri.freedesktop.org/libdrm
-PKG_HASH:=d66ad8b5c2441015ac1333e40137bb803c3bde3612ff040286fcc12158ea1bcb
+PKG_HASH:=554cfbfe0542bddb391b4e3e05bfbbfc3e282b955bd56218d21c0616481f65eb
 
 PKG_MAINTAINER:=Lucian Cristian <lucian.cristian@gmail.com>
 PKG_LICENSE:=BSD-3-Clause
@@ -21,11 +21,8 @@ PKG_CONFIG_DEPENDS:= \
 	CONFIG_LIBDRM_NOUVEAU \
 	CONFIG_LIBDRM_RADEON
 
-PKG_INSTALL:=1
-PKG_BUILD_DEPENDS:=meson/host
-
 include $(INCLUDE_DIR)/package.mk
-include ../../devel/meson/meson.mk
+include $(INCLUDE_DIR)/meson.mk
 
 define Package/libdrm
   SECTION:=libs
@@ -46,20 +43,20 @@ define Package/libdrm/config
 endef
 
 MESON_ARGS += \
-	$(if $(CONFIG_LIBDRM_INTEL),-Dintel=true -Dlibkms=true,-Dintel=false -Dlibkms=false) \
-	-Dradeon=$(if $(CONFIG_LIBDRM_RADEON),true,false) \
-	-Damdgpu=false \
-	-Dnouveau=$(if $(CONFIG_LIBDRM_NOUVEAU),true,false) \
-	-Dvmwgfx=false \
-	-Domap=false \
-	-Dexynos=false \
-	-Dfreedreno=false \
-	-Dtegra=false \
-	-Dvc4=false \
-	-Detnaviv=false \
-	-Dcairo-tests=false \
-	-Dman-pages=false \
-	-Dvalgrind=false \
+	-Dintel=$(if $(CONFIG_LIBDRM_INTEL),en,dis)abled \
+	-Dradeon=$(if $(CONFIG_LIBDRM_RADEON),en,dis)abled \
+	-Damdgpu=disabled \
+	-Dnouveau=$(if $(CONFIG_LIBDRM_NOUVEAU),en,dis)abled \
+	-Dvmwgfx=disabled \
+	-Domap=disabled \
+	-Dexynos=disabled \
+	-Dfreedreno=disabled \
+	-Dtegra=disabled \
+	-Dvc4=disabled \
+	-Detnaviv=disabled \
+	-Dcairo-tests=disabled \
+	-Dman-pages=disabled \
+	-Dvalgrind=disabled \
 	-Dfreedreno-kgsl=false \
 	-Dinstall-test-programs=false \
 	-Dudev=false

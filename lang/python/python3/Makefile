@@ -16,10 +16,10 @@ PKG_VERSION:=$(PYTHON3_VERSION).$(PYTHON3_VERSION_MICRO)
 
 PKG_SOURCE:=Python-$(PKG_VERSION).tar.xz
 PKG_SOURCE_URL:=https://www.python.org/ftp/python/$(PKG_VERSION)
-PKG_HASH:=397920af33efc5b97f2e0b57e91923512ef89fc5b3c1d21dbfc8c4828ce0108a
+PKG_HASH:=2f0e409df2ab57aa9fc4cbddfb976af44e4e55bf6f619eee6bc5c2297264a7f6
 
-PKG_MAINTAINER:=Alexandru Ardelean <ardeleanalex@gmail.com>, Jeffery To <jeffery.to@gmail.com>
-PKG_LICENSE:=Python/2.0
+PKG_MAINTAINER:=Jeffery To <jeffery.to@gmail.com>
+PKG_LICENSE:=PSF-2.0
 PKG_LICENSE_FILES:=LICENSE Doc/copyright.rst Doc/license.rst Modules/_ctypes/darwin/LICENSE Modules/_ctypes/libffi_osx/LICENSE Modules/expat/COPYING
 PKG_CPE_ID:=cpe:/a:python:python
 
@@ -34,17 +34,15 @@ PKG_FIXUP:=autoreconf
 PKG_INSTALL:=1
 PKG_BUILD_PARALLEL:=1
 HOST_BUILD_PARALLEL:=1
+# LTO is handled here individually, see --with-lto below
+# "no-lto" prevents CONFIG_USE_LTO to add additional and interfering flags
+PKG_BUILD_FLAGS:=no-lto
 
 PKG_BUILD_DIR:=$(BUILD_DIR)/Python-$(PKG_VERSION)
 HOST_BUILD_DIR:=$(BUILD_DIR_HOST)/Python-$(PKG_VERSION)
 
-PKG_CONFIG_DEPENDS:= \
-	CONFIG_PACKAGE_python3-pkg-resources \
-	CONFIG_PACKAGE_python3-setuptools CONFIG_PACKAGE_python3-pip \
-	CONFIG_PYTHON3_BLUETOOTH_SUPPORT
-
-PKG_BUILD_DEPENDS:=python3/host
-HOST_BUILD_DEPENDS:=bzip2/host expat/host libffi/host
+PKG_BUILD_DEPENDS:=bluez python3/host python-build/host python-installer/host python-wheel/host
+HOST_BUILD_DEPENDS:=bzip2/host libffi/host
 
 include $(INCLUDE_DIR)/host-build.mk
 include $(INCLUDE_DIR)/package.mk
@@ -69,7 +67,7 @@ endef
 define Package/libpython3
 $(call Package/python3/Default)
   TITLE:=Python $(PYTHON3_VERSION) core library
-  DEPENDS:=+libpthread +zlib
+  DEPENDS:=+libpthread
   ABI_VERSION:=$(PYTHON3_VERSION)
 endef
 
@@ -80,7 +78,7 @@ endef
 define Package/python3-base
 $(call Package/python3/Default)
   TITLE:=Python $(PYTHON3_VERSION) interpreter
-  DEPENDS:=+libpthread +zlib +libpython3
+  DEPENDS:=+libpython3
 endef
 
 define Package/python3-base/description
@@ -91,7 +89,7 @@ endef
 define Package/python3-light
 $(call Package/python3/Default)
   TITLE:=Python $(PYTHON3_VERSION) light installation
-  DEPENDS:=+python3-base +libffi +libbz2 +PYTHON3_BLUETOOTH_SUPPORT:bluez-libs +libuuid
+  DEPENDS:=+python3-base +libbz2 +zlib
 endef
 
 define Package/python3-light/config
@@ -136,90 +134,54 @@ define Package/python3/description
   It's python3-light + all other packages.
 endef
 
+# Set READELF here so that the exact same readelf program name can be
+# replaced in _sysconfigdata.py (in Py3Package/python3-base/install)
 TARGET_CONFIGURE_OPTS+= \
 	READELF="$(TARGET_CROSS)readelf"
 
-MAKE_FLAGS+=\
-	LD="$(TARGET_CC)"
-
-EXTRA_CFLAGS+= \
-	-DNDEBUG -fno-inline
 EXTRA_LDFLAGS+= \
 	-L$(PKG_BUILD_DIR) \
 	-L$(STAGING_DIR)/usr/lib -L$(STAGING_DIR)/lib
 
-DISABLE_BLUETOOTH:= \
-	ac_cv_header_bluetooth_bluetooth_h=no \
-	ac_cv_header_bluetooth_h=no
+# Bypass configure tests for cross compilation
+CONFIGURE_VARS += \
+	ac_cv_buggy_getaddrinfo=no \
+	ac_cv_file__dev_ptc=no \
+	ac_cv_file__dev_ptmx=yes
 
-CONFIGURE_ARGS+= \
+# Do not link with libbsd for flock
+# https://github.com/openwrt/packages/issues/21161
+CONFIGURE_VARS += \
+	ac_cv_lib_bsd_flock=no
+
+# Disable stdlib modules
+# Check for a better way in the future: https://github.com/python/cpython/issues/98558
+CONFIGURE_VARS += \
+	py_cv_module__tkinter=n/a \
+	py_cv_module_nis=n/a
+
+# Workaround for hardfloat mips
+# https://bugs.python.org/issue46265
+ifneq ($(findstring mips,$(CONFIG_ARCH)),)
+ifeq ($(CONFIG_HAS_FPU),y)
+CONFIGURE_VARS += \
+	ax_cv_check_cflags___fno_semantic_interposition=no
+endif
+endif
+
+MAKE_VARS += \
+	PYTHONSTRICTEXTENSIONBUILD=1
+
+CONFIGURE_ARGS += \
 	--enable-optimizations \
 	--enable-shared \
+	--disable-test-modules \
+	--with-build-python \
 	--with-system-ffi \
 	--without-cxx-main \
 	--without-ensurepip \
-	--without-pymalloc \
 	$(if $(CONFIG_IPV6),--enable-ipv6) \
-	$(if $(findstring mips,$(CONFIG_ARCH)),,--with-lto) \
-	CONFIG_SITE="$(PKG_BUILD_DIR)/config.site" \
-	OPT="$(TARGET_CFLAGS)" \
-	$(if $(CONFIG_PYTHON3_BLUETOOTH_SUPPORT),,$(DISABLE_BLUETOOTH))
-
-define Build/Prepare
-	$(call Build/Prepare/Default)
-	$(CP) ./files/config.site $(PKG_BUILD_DIR)/config.site
-endef
-
-ifdef CONFIG_PACKAGE_python3-setuptools
-PYTHON3_SETUPTOOLS_BUILD:=1
-endif
-
-ifdef CONFIG_PACKAGE_python3-pkg-resources
-PYTHON3_SETUPTOOLS_BUILD:=1
-endif
-
-ifeq ($(PYTHON3_SETUPTOOLS_BUILD),1)
-define Build/Compile/python3-setuptools
-	$(HOST_PYTHON3_PIP) \
-		--disable-pip-version-check \
-		--cache-dir "$(DL_DIR)/pip-cache" \
-		install \
-		--ignore-installed \
-		--root=$(PKG_BUILD_DIR)/install-setuptools \
-		--prefix=/usr \
-		$(PKG_BUILD_DIR)/Lib/ensurepip/_bundled/setuptools-$(PYTHON3_SETUPTOOLS_VERSION)-py3-none-any.whl
-	$(call PatchDir,$(PKG_BUILD_DIR)/install-setuptools/usr/lib/python$(PYTHON3_VERSION)/site-packages,./patches-setuptools,)
-endef
-else
-define Build/Compile/python3-setuptools
-	ls $(PKG_BUILD_DIR)/Lib/ensurepip/_bundled/setuptools-$(PYTHON3_SETUPTOOLS_VERSION)-py3-none-any.whl
-endef
-endif # CONFIG_PACKAGE_python3-setuptools
-
-ifdef CONFIG_PACKAGE_python3-pip
-define Build/Compile/python3-pip
-	$(HOST_PYTHON3_PIP) \
-		--disable-pip-version-check \
-		--cache-dir "$(DL_DIR)/pip-cache" \
-		install \
-		--ignore-installed \
-		--root=$(PKG_BUILD_DIR)/install-pip \
-		--prefix=/usr \
-		$(PKG_BUILD_DIR)/Lib/ensurepip/_bundled/pip-$(PYTHON3_PIP_VERSION)-py3-none-any.whl
-	$(call PatchDir,$(PKG_BUILD_DIR)/install-pip/usr/lib/python$(PYTHON3_VERSION)/site-packages,./patches-pip,)
-endef
-else
-define Build/Compile/python3-pip
-	ls $(PKG_BUILD_DIR)/Lib/ensurepip/_bundled/pip-$(PYTHON3_PIP_VERSION)-py3-none-any.whl
-endef
-endif # CONFIG_PACKAGE_python3-pip
-
-define Build/Compile
-	$(call Build/Compile/Default)
-	# Use host pip to install python-setuptools
-	$(call Build/Compile/python3-setuptools)
-	$(call Build/Compile/python3-pip)
-endef
+	$(if $(findstring mips,$(CONFIG_ARCH)),,--with-lto)
 
 define Build/InstallDev
 	$(INSTALL_DIR) $(1)/usr/include $(1)/usr/lib $(1)/usr/lib/pkgconfig
@@ -273,7 +235,6 @@ define Py3Package/python3-light/filespec
 +|/usr/lib/python$(PYTHON3_VERSION)
 -|/usr/lib/python$(PYTHON3_VERSION)/distutils/cygwinccompiler.py
 -|/usr/lib/python$(PYTHON3_VERSION)/distutils/command/wininst*
--|/usr/lib/python$(PYTHON3_VERSION)/ensurepip
 -|/usr/lib/python$(PYTHON3_VERSION)/idlelib
 -|/usr/lib/python$(PYTHON3_VERSION)/tkinter
 -|/usr/lib/python$(PYTHON3_VERSION)/turtledemo
@@ -309,6 +270,13 @@ define Py3Package/python3/filespec
 -|$(PYTHON3_PKG_DIR)
 endef
 
+# libuuid is provided by e2fsprogs and uuid/uuid.h is moved into
+# $(STAGING_DIR_HOST)/include/e2fsprogs
+HOST_CFLAGS += \
+	-I$(STAGING_DIR_HOST)/include/e2fsprogs
+HOST_CPPFLAGS += \
+	-I$(STAGING_DIR_HOST)/include/e2fsprogs
+
 HOST_LDFLAGS += \
 	-Wl$(comma)-rpath$(comma)$(STAGING_DIR_HOSTPKG)/lib
 
@@ -317,6 +285,14 @@ HOST_LDFLAGS += \
 	-Wl,--no-as-needed -lrt
 endif
 
+# Would be nice to be able to do this, but hosts are very fiddly
+# HOST_MAKE_VARS += \
+# 	PYTHONSTRICTEXTENSIONBUILD=1
+
+# Bypass configure test
+HOST_CONFIGURE_VARS += \
+	ac_cv_working_openssl_hashlib=yes
+
 ifeq ($(HOST_OS),Darwin)
 HOST_CONFIGURE_VARS += \
 	ac_cv_header_libintl_h=no
@@ -324,22 +300,19 @@ HOST_MAKE_VARS += \
 	USE_PYTHON_CONFIG_PY=1
 endif
 
-HOST_CONFIGURE_ARGS+= \
+HOST_CONFIGURE_ARGS += \
 	--enable-optimizations \
+	--disable-test-modules \
 	--with-ensurepip=upgrade \
-	--with-system-expat=$(STAGING_DIR_HOSTPKG) \
-	--without-cxx-main \
-	--without-pymalloc \
-	CONFIG_SITE=
+	--with-ssl-default-suites=openssl \
+	--with-system-expat \
+	--without-cxx-main
 
 define Host/Configure
 	$(SED) 's/^ENABLE_USER_SITE = None$$$$/ENABLE_USER_SITE = False/' $(HOST_BUILD_DIR)/Lib/site.py
 	$(call Host/Configure/Default)
-endef
-
-define Host/Compile
-	$(call Host/Compile/Default,python)
-	$(call Host/Compile/Default,sharedmods)
+	ls $(HOST_BUILD_DIR)/Lib/ensurepip/_bundled/setuptools-$(PYTHON3_SETUPTOOLS_VERSION)-py3-none-any.whl
+	ls $(HOST_BUILD_DIR)/Lib/ensurepip/_bundled/pip-$(PYTHON3_PIP_VERSION)-py3-none-any.whl
 endef
 
 define Host/Install
@@ -360,11 +333,11 @@ define Host/Install
 	)
 	$(call Host/Install/Default)
 	$(if $(wildcard $(HOST_PYTHON3_PKG_DIR)/.setuptools_installed_$(PYTHON3_SETUPTOOLS_VERSION)-$(PYTHON3_SETUPTOOLS_PKG_RELEASE)),,
-		$(call HostPatchDir,$(HOST_PYTHON3_PKG_DIR),./patches-setuptools,)
+		$(call HostPatchDir,$(HOST_PYTHON3_PKG_DIR),./patches-host-setuptools,)
 		touch $(HOST_PYTHON3_PKG_DIR)/.setuptools_installed_$(PYTHON3_SETUPTOOLS_VERSION)-$(PYTHON3_SETUPTOOLS_PKG_RELEASE)
 	)
 	$(if $(wildcard $(HOST_PYTHON3_PKG_DIR)/.pip_installed_$(PYTHON3_PIP_VERSION)-$(PYTHON3_PIP_PKG_RELEASE)),,
-		$(call HostPatchDir,$(HOST_PYTHON3_PKG_DIR),./patches-pip,)
+		$(call HostPatchDir,$(HOST_PYTHON3_PKG_DIR),./patches-host-pip,)
 		touch $(HOST_PYTHON3_PKG_DIR)/.pip_installed_$(PYTHON3_PIP_VERSION)-$(PYTHON3_PIP_PKG_RELEASE)
 	)
 endef

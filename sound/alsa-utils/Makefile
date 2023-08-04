@@ -8,13 +8,13 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=alsa-utils
-PKG_VERSION:=1.2.5
-PKG_RELEASE:=$(AUTORELEASE)
+PKG_VERSION:=1.2.9
+PKG_RELEASE:=1
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.bz2
-PKG_SOURCE_URL:=ftp://ftp.alsa-project.org/pub/utils/ \
-		http://distfiles.gentoo.org/distfiles/
-PKG_HASH:=09970af05838b30001ca93ba27cb85b24c45056c70a80066c3ece6abe5a19997
+PKG_SOURCE_URL:=https://www.alsa-project.org/files/pub/utils/ \
+		https://distfiles.gentoo.org/distfiles/
+PKG_HASH:=e7623d4525595f92e11ce25ee9a97f2040a14c6e4dcd027aa96e06cbce7817bd
 
 PKG_MAINTAINER:=Ted Hess <thess@kitschensync.net>
 PKG_LICENSE:=GPL-2.0-or-later

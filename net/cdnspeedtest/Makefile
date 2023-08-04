@@ -1,68 +1,37 @@
+# SPDX-License-Identifier: GPL-3.0-only
 #
-# Copyright (C) 2021 ImmortalWrt
-# <https://immortalwrt.org>
-#
-# This is free software, licensed under the GNU General Public License v3.
-# See /LICENSE for more information.
-#
+# Copyright (C) 2021 ImmortalWrt.org
 
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=CloudflareSpeedTest
-PKG_VERSION:=1.4.10
-PKG_RELEASE:=$(AUTORELEASE)
+PKG_VERSION:=2.2.4
+PKG_RELEASE:=1
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.gz
 PKG_SOURCE_URL:=https://codeload.github.com/XIU2/CloudflareSpeedTest/tar.gz/v$(PKG_VERSION)?
-PKG_HASH:=17b3cce3dbf76fa98dce1b433ef42e928d486f70d6596012e3dd63530da575b6
+PKG_HASH:=9025102b4302cc2e7e91e8ed60ce49ca7c5b2494b09f14edfd4e012ea828e61d
 
-PKG_LICENSE:=GPL-3.0
-PKG_LICENSE_FILE:=LICENSE
-PKG_MAINTAINER:=CN_SZTL <cnsztl@immortalwrt.org>
-
-PKG_CONFIG_DEPENDS:= \
-	CONFIG_CDNSPEEDTEST_COMPRESS_GOPROXY \
-	CONFIG_CDNSPEEDTEST_COMPRESS_UPX
+PKG_LICENSE:=GPL-3.0-only
+PKG_LICENSE_FILES:=LICENSE
+PKG_MAINTAINER:=Tianling Shen <cnsztl@immortalwrt.org>
 
 PKG_BUILD_DEPENDS:=golang/host
 PKG_BUILD_PARALLEL:=1
-PKG_USE_MIPS16:=0
+PKG_BUILD_FLAGS:=no-mips16
 
-GO_PKG:=CloudflareSpeedTest
-GO_PKG_LDFLAGS:=-s -w
+GO_PKG:=github.com/XIU2/CloudflareSpeedTest
 GO_PKG_LDFLAGS_X:=main.version=v$(PKG_VERSION)
 
 include $(INCLUDE_DIR)/package.mk
 include ../../lang/golang/golang-package.mk
 
 define Package/cdnspeedtest
-	SECTION:=net
-	CATEGORY:=Network
-	TITLE:=Getting the fastest ips to your network of CDN
-	URL:=https://github.com/XIU2/CloudflareSpeedTest
-	DEPENDS:=$(GO_ARCH_DEPENDS)
-endef
-
-define Package/cdnspeedtest/config
-config CDNSPEEDTEST_COMPRESS_GOPROXY
-	bool "Compiling with GOPROXY proxy"
-	default n
-
-config CDNSPEEDTEST_COMPRESS_UPX
-	bool "Compress executable files with UPX"
-	default y
-endef
-
-ifeq ($(CONFIG_CDNSPEEDTEST_COMPRESS_GOPROXY),y)
-	export GO111MODULE=on
-	export GOPROXY=https://goproxy.baidu.com
-endif
-
-define Build/Compile
-	$(call GoPackage/Build/Compile)
-ifeq ($(CONFIG_CDNSPEEDTEST_COMPRESS_UPX),y)
-	$(STAGING_DIR_HOST)/bin/upx --lzma --best $(GO_PKG_BUILD_BIN_DIR)/CloudflareSpeedTest
-endif
+  SECTION:=net
+  CATEGORY:=Network
+  TITLE:=Getting the fastest ips to your network of CDN
+  URL:=https://github.com/XIU2/CloudflareSpeedTest
+  DEPENDS:=$(GO_ARCH_DEPENDS) +ca-bundle
 endef
 
 define Package/cdnspeedtest/install

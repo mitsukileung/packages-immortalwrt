@@ -1,37 +1,29 @@
+# SPDX-License-Identifier: GPL-3.0-only
 #
-# Copyright (C) 2021 ImmortalWrt
-# This is free software, licensed under the GNU General Public License v3.
-# See /LICENSE.txt for more information.
-#
+# Copyright (C) 2021 ImmortalWrt.org
 
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=filebrowser
-PKG_VERSION:=2.15.0
-PKG_RELEASE:=1
+PKG_VERSION:=2.23.0
+PKG_RELEASE:=2
 
-PKG_SOURCE_PROTO:=git
-PKG_SOURCE_VERSION:=73ccbe9
-PKG_SOURCE_URL:=https://github.com/filebrowser/filebrowser
-PKG_MIRROR_HASH:=2dbb4b17b78b13cee44c62d1109459f92f5fd25c3953ba055e5d778c76244a38
+PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.gz
+PKG_SOURCE_URL:=https://codeload.github.com/filebrowser/filebrowser/tar.gz/v$(PKG_VERSION)?
+PKG_HASH:=9a99f0c51114ff7e3df89190729a8ca1c0ed48c491a5c6f9d9e266eb6657898d
 
 PKG_LICENSE:=Apache-2.0
 PKG_LICENSE_FILES:=LICENSE
-PKG_MAINTAINER:=CN_SZTL <cnsztl@immortalwrt.org>
+PKG_MAINTAINER:=Tianling Shen <cnsztl@immortalwrt.org>
 
 PKG_BUILD_DEPENDS:=golang/host node/host
 PKG_BUILD_PARALLEL:=1
-PKG_USE_MIPS16:=0
+PKG_BUILD_FLAGS:=no-mips16
 
-PKG_CONFIG_DEPENDS:= \
-	CONFIG_FILEBROWSER_COMPRESS_GOPROXY \
-	CONFIG_FILEBROWSER_COMPRESS_UPX
-
-GO_PKG:=github.com/filebrowser/filebrowser
-GO_PKG_LDFLAGS:=-s -w
+GO_PKG:=github.com/filebrowser/filebrowser/v2
 GO_PKG_LDFLAGS_X:= \
-	$(GO_PKG)/v2/version.CommitSHA=$(PKG_SOURCE_VERSION) \
-	$(GO_PKG)/v2/version.Version=v$(PKG_VERSION)
+	$(GO_PKG)/version.CommitSHA=$(PKG_VERSION) \
+	$(GO_PKG)/version.Version=v$(PKG_VERSION)
 
 include $(INCLUDE_DIR)/package.mk
 include ../../lang/golang/golang-package.mk
@@ -51,40 +43,28 @@ define Package/filebrowser/description
   It can be used as a standalone app or as a middleware.
 endef
 
-define Package/filebrowser/config
-config FILEBROWSER_COMPRESS_GOPROXY
-	bool "Compiling with GOPROXY proxy"
-	default n
-
-config FILEBROWSER_COMPRESS_UPX
-	bool "Compress executable files with UPX"
-	default y
+define Package/filebrowser/conffiles
+/etc/filebrowser/
+/etc/config/filebrowser
 endef
 
-ifeq ($(CONFIG_FILEBROWSER_COMPRESS_GOPROXY),y)
-export GO111MODULE=on
-export GOPROXY=https://goproxy.baidu.com
-endif
-
 define Build/Compile
-( \
-  cd $(PKG_BUILD_DIR)/frontend ; \
-  npm ci; \
-  npm run lint ; \
-  npm run build ; \
-)
-	$(call GoPackage/Build/Compile)
-ifeq ($(CONFIG_FILEBROWSER_COMPRESS_UPX),y)
-	$(STAGING_DIR_HOST)/bin/upx --lzma --best $(GO_PKG_BUILD_BIN_DIR)/filebrowser
-endif
+	( \
+		pushd "$(PKG_BUILD_DIR)/frontend" ; \
+		npm ci; \
+		NODE_OPTIONS=--openssl-legacy-provider npm run build ; \
+		popd ; \
+		$(call GoPackage/Build/Compile) ; \
+	)
 endef
 
 define Package/filebrowser/install
-	$(call GoPackage/Package/Install/Bin,$(PKG_INSTALL_DIR))
-	$(INSTALL_DIR) $(1)/etc/config/ $(1)/etc/init.d/ $(1)/usr/bin/
+	$(call GoPackage/Package/Install/Bin,$(1))
+
+	$(INSTALL_DIR) $(1)/etc/config
 	$(INSTALL_CONF) $(CURDIR)/files/filebrowser.config $(1)/etc/config/filebrowser
+	$(INSTALL_DIR) $(1)/etc/init.d
 	$(INSTALL_BIN) $(CURDIR)/files/filebrowser.init $(1)/etc/init.d/filebrowser
-	$(INSTALL_BIN) $(GO_PKG_BUILD_BIN_DIR)/filebrowser $(1)/usr/bin/filebrowser
 endef
 
 $(eval $(call GoBinPackage,filebrowser))
